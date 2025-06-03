@@ -4,7 +4,8 @@
 //! It re-exports the most commonly used types and functions from all engine modules.
 
 // Re-export core functionality
-pub use rrte_core::{Engine, Time, Scene, Events, Input, EngineConfig as CoreEngineConfig};
+pub use rrte_core::{Engine, Time, Events, Input, EngineConfig as CoreEngineConfig};
+pub use rrte_scene::Scene;
 pub use rrte_math::*;
 pub use rrte_ecs::*;
 pub use rrte_plugin::{Plugin, PluginManifest, PluginContext, PluginEvent};

@@ -62,9 +62,6 @@ pub mod prelude {
         light::PointLight,
         camera::{Camera, ProjectionType},
         primitives::{Sphere, Cube, Cylinder, Cone, Capsule, Plane, Triangle},
-        sdf::{SDF, primitives::*},
-        sdf_object::{SDFObject, builders::*},
-        deformation::*,
         raytracer::RaytracerConfig,
         gpu_renderer::GpuRendererConfig,
     };

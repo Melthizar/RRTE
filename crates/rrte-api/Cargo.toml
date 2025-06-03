@@ -11,6 +11,7 @@ rrte-renderer = { path = "../rrte-renderer" }
 rrte-ecs = { path = "../rrte-ecs" }
 rrte-plugin = { path = "../rrte-plugin" }
 rrte-assets = { path = "../rrte-assets" }
+rrte-scene = { path = "../rrte-scene" }
 
 serde.workspace = true
 serde_json.workspace = true

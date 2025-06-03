@@ -11,6 +11,7 @@ members = [
     "examples/advanced-demo",
     "examples/sdf-showcase",
     "examples/simple-demo",
+    "crates/rrte-scene",
 ]
 resolver = "2"
 
