@@ -196,17 +196,25 @@ impl Engine {
                     gpu_config.format = surface_caps.formats[0];
                 }
 
+                // Use actual window size instead of config size for surface configuration
+                let window_size = window_arc.inner_size();
+                info!("Configuring GPU surface with actual window size: {}x{}", window_size.width, window_size.height);
+
                 let surface_config = wgpu::SurfaceConfiguration {
                     usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                     format: gpu_config.format,
-                    width: gpu_config.width,
-                    height: gpu_config.height,
+                    width: window_size.width,  // Use actual window width
+                    height: window_size.height, // Use actual window height
                     present_mode: gpu_config.present_mode, 
                     alpha_mode: surface_caps.alpha_modes[0], // Use first supported alpha mode
                     view_formats: vec![],
                     desired_maximum_frame_latency: 2, // Default value
                 };
                 surface_arc.configure(&device_arc, &surface_config);
+                
+                // Update GPU config to match actual window size
+                gpu_config.width = window_size.width;
+                gpu_config.height = window_size.height;
                 self.config.gpu_renderer_config = gpu_config.clone(); // Store potentially updated format
 
                 let gpu_renderer_instance = GpuRenderer::new(
@@ -219,6 +227,12 @@ impl Engine {
                 ).await?;
                 
                 self.renderer = ActiveRenderer::Gpu(gpu_renderer_instance);
+                
+                // Update camera aspect ratio to match actual window size
+                if let rrte_renderer::camera::ProjectionType::Perspective { aspect_ratio, .. } = &mut self.camera.projection {
+                    *aspect_ratio = window_size.width as f32 / window_size.height as f32;
+                }
+                
                 info!("GPU Renderer initialized.");
             }
         }
@@ -266,19 +280,27 @@ impl Engine {
     pub fn render_frame(&mut self) -> Result<()> {
         match &mut self.renderer {
             ActiveRenderer::Cpu(raytracer) => {
-                // For now, render with empty vectors until Scene methods are available
-                self.frame_buffer = raytracer.render(&Vec::new(), &Vec::new(), &Vec::new(), &self.camera);
+                // Convert Vec<Arc<Sphere>> to Vec<Arc<dyn SceneObject>> for the CPU raytracer
+                let scene_objects: Vec<Arc<dyn rrte_renderer::primitives::SceneObject>> = 
+                    self.scene.objects().iter().map(|s| s.clone() as Arc<dyn rrte_renderer::primitives::SceneObject>).collect();
+                
+                // Convert Vec<Arc<PointLight>> to Vec<Arc<dyn Light>> for the CPU raytracer
+                let scene_lights: Vec<Arc<dyn rrte_renderer::light::Light>> = 
+                    self.scene.lights().iter().map(|l| l.clone() as Arc<dyn rrte_renderer::light::Light>).collect();
+                
+                // TODO: The Scene struct should also store directional lights if needed by CPU raytracer.
+                // For now, passing an empty vec for directional lights.
+                self.frame_buffer = raytracer.render(&scene_objects, &scene_lights, &Vec::new(), &self.camera);
             }
             ActiveRenderer::Gpu(gpu_renderer) => {
                 let output_surface_texture = gpu_renderer.get_current_texture()?;
-                // self.camera.update_aspect_ratio(gpu_renderer.get_aspect_ratio()); // Removed, handled by update_resolution
                 
-                // GpuRenderer's render method now copies to the swap chain texture itself.
-                // We pass camera view and projection matrices.
+                // GpuRenderer::render now takes spheres and lights directly to avoid cyclic dependency
                 gpu_renderer.render(
                     &output_surface_texture.texture, // This is the swap chain texture
-                    &self.camera.view_matrix(), 
-                    &self.camera.projection_matrix()
+                    self.scene.objects(), // Pass spheres directly via accessor
+                    self.scene.lights(), // Pass lights directly via accessor
+                    &self.camera
                 )?;
                 output_surface_texture.present();
             }

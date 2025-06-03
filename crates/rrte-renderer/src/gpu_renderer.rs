@@ -5,7 +5,11 @@ use std::sync::Arc;
 use wgpu::util::DeviceExt;
 use glam::{Vec3, Mat4};
 // use crate::RendererConfig; // Commented out to investigate usage
-// use rrte_scene::Scene; // Removed this import
+use crate::camera::Camera as RendererCamera; // Added import for RendererCamera
+use crate::material::Material; // Added for material handling
+use crate::primitives::Sphere; // Added for sphere handling
+use crate::light::PointLight; // Added for light handling
+use std::collections::HashMap; // Added for material map
 use log::{info, warn, error};
 
 /// GPU renderer configuration
@@ -57,6 +61,16 @@ pub struct MaterialGpu {
     pub smoothness: f32, // For metal, roughness etc.
     _padding: [u32; 2], // Ensure alignment
 }
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct PointLightGpu {
+    pub position: [f32; 4], // xyz + padding or intensity
+    pub color: [f32; 4], // rgba
+    pub intensity: f32,
+    pub range: f32, // Maximum distance the light affects
+    _padding: [u32; 2], // Ensure alignment to 16 bytes
+}
 // END NEW GPU DATA STRUCTURES
 
 /// GPU-based renderer using wgpu
@@ -71,8 +85,9 @@ pub struct GpuRenderer {
     camera_buffer: wgpu::Buffer,
     sphere_buffer: wgpu::Buffer,
     material_buffer: wgpu::Buffer,
+    light_buffer: wgpu::Buffer, // Added for point lights
     output_texture: wgpu::Texture,          // Stores the result of the compute shader (Rgba8Unorm)
-    output_texture_view: wgpu::TextureView, 
+    output_texture_view: wgpu::TextureView,
     compute_pipeline: wgpu::ComputePipeline,
     compute_bind_group_layout: wgpu::BindGroupLayout, // Renamed for clarity
     compute_bind_group: wgpu::BindGroup,           // Renamed for clarity
@@ -112,20 +127,29 @@ impl GpuRenderer {
         });
 
         let initial_spheres_gpu: Vec<SphereGpu> = vec![SphereGpu {
-            center: [0.0, 0.0, 0.0, 0.0], radius: 0.0, material_index: 0, _padding: [0,0]
-        }; 10];
+            center: [0.0, 0.0, 0.0, 0.0], radius: 1.0, material_index: 0, _padding: [0,0]
+        }; 1];
         let sphere_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Sphere Buffer"),
+            label: Some("Sphere Buffer (Initial)"),
             contents: bytemuck::cast_slice(&initial_spheres_gpu),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
         
         let initial_materials_gpu: Vec<MaterialGpu> = vec![MaterialGpu {
-            color: [0.0,0.0,0.0,0.0], material_type: 0, smoothness: 0.0, _padding: [0,0]
-        }; 5];
+            color: [0.8, 0.8, 0.8, 1.0], material_type: 0, smoothness: 0.5, _padding: [0,0]
+        }; 1];
         let material_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Material Buffer"),
+            label: Some("Material Buffer (Initial)"),
             contents: bytemuck::cast_slice(&initial_materials_gpu),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let initial_lights_gpu: Vec<PointLightGpu> = vec![PointLightGpu {
+            position: [0.0, 10.0, 0.0, 0.0], color: [1.0, 1.0, 1.0, 1.0], intensity: 100.0, range: 50.0, _padding: [0,0]
+        }; 1];
+        let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Light Buffer (Initial)"),
+            contents: bytemuck::cast_slice(&initial_lights_gpu),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -185,8 +209,18 @@ impl GpuRenderer {
                     },
                     count: None,
                 },
-                wgpu::BindGroupLayoutEntry { // Output Texture (Storage)
+                wgpu::BindGroupLayoutEntry { // Lights
                     binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<PointLightGpu>() as u64),
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry { // Output Texture (Storage)
+                    binding: 4,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::StorageTexture {
                         access: wgpu::StorageTextureAccess::WriteOnly,
@@ -229,6 +263,10 @@ impl GpuRenderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
+                    resource: light_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
                     resource: wgpu::BindingResource::TextureView(&output_texture_view),
                 },
             ],
@@ -339,6 +377,7 @@ impl GpuRenderer {
             camera_buffer,
             sphere_buffer,
             material_buffer,
+            light_buffer,
             output_texture,
             output_texture_view,
             compute_pipeline,
@@ -422,20 +461,161 @@ impl GpuRenderer {
     pub fn render(
         &mut self,
         target_swap_chain_texture: &wgpu::Texture, // This is the actual swap chain texture
-        camera_transform: &Mat4, // World to View
-        camera_projection: &Mat4  // View to Clip
+        spheres: &[Arc<Sphere>], // Pass spheres directly instead of Scene
+        lights: &[Arc<PointLight>], // Added lights parameter
+        renderer_camera: &RendererCamera
     ) -> anyhow::Result<()> {
         // 1. Update Camera Buffer
+        let view_matrix = renderer_camera.view_matrix();
+        let projection_matrix = renderer_camera.projection_matrix();
+        let camera_world_pos = renderer_camera.transform.position;
+
         let camera_gpu = CameraGpu {
-            position: camera_transform.col(3).to_array(), // Assuming camera_transform is view matrix, position is in its 4th column
-            view_projection: (*camera_projection * *camera_transform).to_cols_array_2d(),
-            inv_projection: camera_projection.inverse().to_cols_array_2d(),
-            inv_view: camera_transform.inverse().to_cols_array_2d(),
+            position: [camera_world_pos.x, camera_world_pos.y, camera_world_pos.z, 1.0],
+            view_projection: (projection_matrix * view_matrix).to_cols_array_2d(),
+            inv_projection: projection_matrix.inverse().to_cols_array_2d(),
+            inv_view: view_matrix.inverse().to_cols_array_2d(),
         };
         self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera_gpu));
 
-        // 2. TODO: Update Sphere and Material Buffers (if scene changed)
-        // For now, they use initial placeholder data.
+        // 2. Update Sphere and Material Buffers
+        let mut material_map: HashMap<usize, u32> = HashMap::new(); // Using usize from Arc pointer for Material
+        let mut materials_gpu_list: Vec<MaterialGpu> = Vec::new();
+        let mut spheres_gpu_list: Vec<SphereGpu> = Vec::new();
+
+        // Add a default material for objects without one, or if lookup fails
+        let default_material_gpu = MaterialGpu {
+            color: [1.0, 0.0, 1.0, 1.0], // Magenta for error/default
+            material_type: 0, // Lambertian
+            smoothness: 0.5,
+            _padding: [0,0],
+        };
+        materials_gpu_list.push(default_material_gpu);
+        let default_material_idx = 0u32;
+
+        for sphere_arc in spheres { // Use passed spheres slice
+            let sphere_item: &Sphere = sphere_arc; // Deref Arc<Sphere> to &Sphere
+
+            let material_idx = if let Some(mat_arc) = &sphere_item.material {
+                // Use data pointer of Arc as key for uniqueness.
+                // Arc::as_ptr returns *const dyn Material (fat pointer), we need just the data part.
+                let mat_ptr = Arc::as_ptr(mat_arc) as *const () as usize; 
+                
+                *material_map.entry(mat_ptr).or_insert_with(|| {
+                    let new_idx = materials_gpu_list.len() as u32;
+                    // Attempt to downcast or identify material type
+                    // For now, only supporting Lambertian explicitly from scene.
+                    // In a real scenario, you'd check mat_arc.is::<LambertianMaterial>() etc.
+                    // Or have Material trait provide MaterialGpu directly.
+                    let albedo = mat_arc.albedo(); // From Material trait
+                    let material_gpu = MaterialGpu {
+                        color: [albedo.r, albedo.g, albedo.b, albedo.a],
+                        material_type: 0, // Assume Lambertian
+                        smoothness: mat_arc.get_properties().roughness, // Example
+                        _padding: [0,0],
+                    };
+                    materials_gpu_list.push(material_gpu);
+                    new_idx
+                })
+            } else {
+                default_material_idx
+            };
+            
+            // Assuming sphere_item.center is world-space
+            let sphere_gpu = SphereGpu {
+                center: [sphere_item.center.x, sphere_item.center.y, sphere_item.center.z, 0.0], // w = 0 for position vector
+                radius: sphere_item.radius,
+                material_index: material_idx,
+                _padding: [0,0],
+            };
+            spheres_gpu_list.push(sphere_gpu);
+        }
+
+        // Recreate sphere buffer if data exists
+        if !spheres_gpu_list.is_empty() {
+            self.sphere_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Sphere Buffer (Dynamic)"),
+                contents: bytemuck::cast_slice(&spheres_gpu_list),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            });
+        } else {
+            // Handle no spheres: create a minimal buffer to satisfy binding
+            let dummy_sphere = SphereGpu { center: [0.0,0.0,0.0,0.0], radius: 0.0, material_index: 0, _padding: [0,0]};
+             self.sphere_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Sphere Buffer (Empty Placeholder)"),
+                contents: bytemuck::bytes_of(&dummy_sphere),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            });
+        }
+
+        // Recreate material buffer (even if only default material exists)
+        self.material_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Material Buffer (Dynamic)"),
+            contents: bytemuck::cast_slice(&materials_gpu_list),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        });
+        
+        // 3. Update Light Buffer
+        let mut lights_gpu_list: Vec<PointLightGpu> = Vec::new();
+        
+        for light_arc in lights {
+            let light_item: &PointLight = light_arc;
+            let light_gpu = PointLightGpu {
+                position: [light_item.position.x, light_item.position.y, light_item.position.z, 0.0],
+                color: [light_item.color.r, light_item.color.g, light_item.color.b, light_item.color.a],
+                intensity: light_item.intensity,
+                range: light_item.range, // Use the range from PointLight
+                _padding: [0, 0],
+            };
+            lights_gpu_list.push(light_gpu);
+        }
+        
+        // Handle case with no lights - add a default disabled light
+        if lights_gpu_list.is_empty() {
+            let default_light = PointLightGpu {
+                position: [0.0, 0.0, 0.0, 0.0],
+                color: [0.0, 0.0, 0.0, 0.0], // Black light (disabled)
+                intensity: 0.0,
+                range: 0.0,
+                _padding: [0, 0],
+            };
+            lights_gpu_list.push(default_light);
+        }
+        
+        // Recreate light buffer
+        self.light_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Light Buffer (Dynamic)"),
+            contents: bytemuck::cast_slice(&lights_gpu_list),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        });
+
+        // Recreate compute bind group
+        self.compute_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Raytrace Compute Bind Group (Recreated)"),
+            layout: &self.compute_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.camera_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.sphere_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: self.material_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: self.light_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&self.output_texture_view),
+                },
+            ],
+        });
 
         // 3. Create Command Encoder
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -499,8 +679,10 @@ impl GpuRenderer {
         self.config.width = width;
         self.config.height = height;
 
-        // Update surface configuration (caller, Engine, should do this and pass new one if necessary)
-        // self.surface.configure(&self.device, &self.surface_config); // This line is typically in Engine
+        // Update surface configuration with new size
+        self.surface_config.width = width;
+        self.surface_config.height = height;
+        self.surface.configure(&self.device, &self.surface_config);
 
         // Recreate output texture with new size
         let output_texture_descriptor = wgpu::TextureDescriptor {
@@ -537,8 +719,12 @@ impl GpuRenderer {
                     binding: 2,
                     resource: self.material_buffer.as_entire_binding(),
                 },
-                wgpu::BindGroupEntry { // Output Texture View
+                wgpu::BindGroupEntry { // Lights
                     binding: 3,
+                    resource: self.light_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry { // Output Texture View
+                    binding: 4,
                     resource: wgpu::BindingResource::TextureView(&self.output_texture_view),
                 },
             ],

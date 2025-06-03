@@ -1675,6 +1675,7 @@ dependencies = [
 name = "rrte-scene"
 version = "0.1.0"
 dependencies = [
+ "glam",
  "rrte-math",
  "rrte-renderer",
 ]

@@ -1,5 +1,5 @@
 use rrte_core::{Engine, EngineConfig, RendererMode};
-use rrte_renderer::{RaytracerConfig, Camera, GpuRendererConfig};
+use rrte_renderer::{RaytracerConfig, GpuRendererConfig};
 use rrte_math::{Vec3, Color};
 use anyhow::Result;
 use log::{info, error};
@@ -8,8 +8,8 @@ use rrte_renderer::material::LambertianMaterial;
 use pixels::{Pixels, SurfaceTexture};
 use winit::dpi::LogicalSize;
 use winit::event::{Event, WindowEvent};
-use winit::event_loop::{ControlFlow, EventLoop};
-use winit::window::{Window, WindowBuilder};
+use winit::event_loop::EventLoop;
+use winit::window::WindowBuilder;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -72,7 +72,7 @@ async fn main() -> Result<()> {
 
     // Pixels is only for CPU rendering path. 
     // We initialize it but will only use it if engine.get_frame_buffer() is Some.
-    let mut RENDER_CPU_PATH = engine.get_frame_buffer().is_some();
+    let RENDER_CPU_PATH = engine.get_frame_buffer().is_some();
     let mut pixels: Option<Pixels> = if RENDER_CPU_PATH {
         info!("CPU rendering path detected, initializing Pixels.");
         let window_size = window.inner_size();
@@ -166,9 +166,9 @@ fn create_demo_scene(engine: &mut Engine) -> Result<()> {
         // Create materials
         let ground_material = LambertianMaterial::new(Color::rgb(0.5, 0.5, 0.5));
         let center_material = LambertianMaterial::new(Color::rgb(0.7, 0.3, 0.3));
-        let left_material = LambertianMaterial::new(Color::rgb(0.8, 0.8, 0.0));
-        let right_material = LambertianMaterial::new(Color::rgb(0.0, 0.0, 0.8));
-        let small_sphere_material = LambertianMaterial::new(Color::rgb(0.2, 0.8, 0.2));
+        // let left_material = LambertianMaterial::new(Color::rgb(0.8, 0.8, 0.0)); // Removed
+        // let right_material = LambertianMaterial::new(Color::rgb(0.0, 0.0, 0.8)); // Removed
+        // let small_sphere_material = LambertianMaterial::new(Color::rgb(0.2, 0.8, 0.2)); // Removed
 
         // Create some basic spheres with materials
         let ground_sphere = Sphere::with_material(Vec3::new(0.0, -1000.0, 0.0), 1000.0, ground_material.clone());
@@ -177,42 +177,42 @@ fn create_demo_scene(engine: &mut Engine) -> Result<()> {
         let center_sphere = Sphere::with_material(Vec3::new(0.0, 1.0, 0.0), 1.0, center_material.clone());
         scene.add_object(Arc::new(center_sphere));
 
-        let left_sphere = Sphere::with_material(Vec3::new(-4.0, 1.0, 0.0), 1.0, left_material.clone());
-        scene.add_object(Arc::new(left_sphere));
+        // let left_sphere = Sphere::with_material(Vec3::new(-4.0, 1.0, 0.0), 1.0, left_material.clone()); // Removed
+        // scene.add_object(Arc::new(left_sphere)); // Removed
 
-        let right_sphere = Sphere::with_material(Vec3::new(4.0, 1.0, 0.0), 1.0, right_material.clone());
-        scene.add_object(Arc::new(right_sphere));
+        // let right_sphere = Sphere::with_material(Vec3::new(4.0, 1.0, 0.0), 1.0, right_material.clone()); // Removed
+        // scene.add_object(Arc::new(right_sphere)); // Removed
 
-        // Add a few more smaller spheres
-        for i in 0..5 {
-            let angle = (i as f32) * std::f32::consts::PI * 2.0 / 5.0;
-            let x = angle.cos() * 2.0;
-            let z = angle.sin() * 2.0;
-            let sphere = Sphere::with_material(Vec3::new(x, 0.3, z), 0.3, small_sphere_material.clone());
-            scene.add_object(Arc::new(sphere));
-        }
+        // Add a few more smaller spheres // Removed
+        // for i in 0..5 { // Removed
+        //     let angle = (i as f32) * std::f32::consts::PI * 2.0 / 5.0; // Removed
+        //     let x = angle.cos() * 2.0; // Removed
+        //     let z = angle.sin() * 2.0; // Removed
+        //     let sphere = Sphere::with_material(Vec3::new(x, 0.3, z), 0.3, small_sphere_material.clone()); // Removed
+        //     scene.add_object(Arc::new(sphere)); // Removed
+        // } // Removed
 
         // Add point lights
         let main_light = PointLight::new(
             Vec3::new(10.0, 10.0, 10.0),
             Color::new(1.0, 1.0, 1.0, 1.0),
-            100.0
+            25.0 // Reduced from 100.0 to 25.0 for less brightness
         );
         scene.add_light(Arc::new(main_light));
 
-        let fill_light = PointLight::new(
-            Vec3::new(-10.0, 5.0, 0.0),
-            Color::new(0.7, 0.8, 1.0, 1.0),
-            50.0
-        );
-        scene.add_light(Arc::new(fill_light));
+        // let fill_light = PointLight::new( // Removed
+        //     Vec3::new(-10.0, 5.0, 0.0), // Removed
+        //     Color::new(0.7, 0.8, 1.0, 1.0), // Removed
+        //     50.0 // Removed
+        // ); // Removed
+        // scene.add_light(Arc::new(fill_light)); // Removed
     }
 
     // --- Camera Setup ---
-    let look_from = Vec3::new(13.0, 2.0, 3.0);
+    let look_from = Vec3::new(6.0, 3.0, 6.0); // Closer to the scene and higher up
     let look_at = Vec3::new(0.0, 0.0, 0.0);
     let up = Vec3::new(0.0, 1.0, 0.0);
-    let fov = 20.0_f32.to_radians();
+    let fov = 45.0_f32.to_radians(); // Increased from 20.0 to 45.0 degrees for wider view
     // Aspect ratio is now set by engine.update_resolution and initialized in Engine::new
     // let aspect_ratio = engine.config().renderer_config.width as f32 / engine.config().renderer_config.height as f32;
 

@@ -7,7 +7,7 @@ description = "Raytracing renderer for RRTE engine"
 [dependencies]
 rrte-math = { path = "../rrte-math" }
 rrte-ecs = { path = "../rrte-ecs" }
-# rrte-scene = { path = "../rrte-scene" } # Removed this dependency
+# rrte-scene = { path = "../rrte-scene" } # Removed to break cyclic dependency
 wgpu = { workspace = true }
 glam = { workspace = true }
 log = { workspace = true }
