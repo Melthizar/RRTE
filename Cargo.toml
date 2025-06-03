@@ -10,6 +10,17 @@ members = [
 ]
 resolver = "2"
 
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn" # Consider changing to "deny" for releases
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+pedantic = "warn"
+nursery = "warn"
+unwrap_used = "warn"
+expect_used = "warn"
+
 [workspace.dependencies]
 # Math and linear algebra
 glam = { version = "0.24", features = ["serde"] }

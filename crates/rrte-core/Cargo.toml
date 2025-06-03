@@ -8,6 +8,10 @@ description = "Core engine functionality for RRTE"
 rrte-math = { path = "../rrte-math" }
 rrte-renderer = { path = "../rrte-renderer" }
 rrte-ecs = { path = "../rrte-ecs" }
+rrte-scene = { path = "../rrte-scene" }
+
+wgpu = { workspace = true }
+
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true

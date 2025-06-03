@@ -1589,9 +1589,11 @@ dependencies = [
  "rrte-ecs",
  "rrte-math",
  "rrte-renderer",
+ "rrte-scene",
  "serde",
  "serde_json",
  "thiserror",
+ "wgpu",
  "winit",
 ]
 
@@ -1657,6 +1659,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bytemuck",
+ "glam",
  "image",
  "log",
  "rand",
@@ -1666,6 +1669,14 @@ dependencies = [
  "serde",
  "wgpu",
  "winit",
+]
+
+[[package]]
+name = "rrte-scene"
+version = "0.1.0"
+dependencies = [
+ "rrte-math",
+ "rrte-renderer",
 ]
 
 [[package]]

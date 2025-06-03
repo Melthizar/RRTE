@@ -7,13 +7,17 @@ description = "Raytracing renderer for RRTE engine"
 [dependencies]
 rrte-math = { path = "../rrte-math" }
 rrte-ecs = { path = "../rrte-ecs" }
-
-wgpu.workspace = true
-winit.workspace = true
-bytemuck.workspace = true
-image.workspace = true
-rayon.workspace = true
-anyhow.workspace = true
-log.workspace = true
-serde.workspace = true
+# rrte-scene = { path = "../rrte-scene" } # Removed this dependency
+wgpu = { workspace = true }
+glam = { workspace = true }
+log = { workspace = true }
+bytemuck = { version = "1.15.0", features = ["derive"] }
+rayon = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
 rand = "0.8"
+image = { workspace = true }
+winit = { workspace = true }
+
+[lints]
+workspace = true

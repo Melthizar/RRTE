@@ -2,9 +2,16 @@
 
 A modular 3D raytracing-based game engine built in Rust, designed for extensibility and performance.
 
-> **✅ CURRENT STATUS (June 3, 2025)**: The engine architecture now supports switchable CPU and GPU renderers. The CPU raytracer is functional and displays in a window. The GPU path is initialized using `wgpu`, can clear the screen, and is ready for compute shader implementation. The main application loop in `src/main.rs` uses `tokio` for async GPU renderer initialization.
+> **✅ CURRENT STATUS (June 5, 2025)**:
+> The `rrte-scene` crate has been created and integrated. The basic GPU raytracing path via compute shaders in `GpuRenderer` is now **functional and displays output**:
+> - **GPU Data Structures**: `CameraGpu`, `SphereGpu`, `MaterialGpu` in Rust and WGSL are used. WGPU buffers are in place.
+> - **WGSL Compute Shader**: `raytrace.wgsl` generates rays based on camera parameters and outputs ray direction as color to an `Rgba8Unorm` texture.
+> - **WGPU Pipeline**: `GpuRenderer` correctly dispatches the compute shader.
+> - **Blit Pass for Display**: A render pipeline (`blit.wgsl` and associated Rust code) in `GpuRenderer` copies the `Rgba8Unorm` output of the compute shader to the swap chain texture. This pass handles potential RGBA vs. BGRA format differences (e.g., if the swap chain is `Bgra8UnormSrgb`) by swizzling channels in the fragment shader. The vertex shader uses a `switch` statement to avoid dynamic indexing, resolving previous validation errors.
+> - **Build System**: Dependencies between `rrte-core`, `rrte-renderer`, and `rrte-scene` are established. The `wgpu` "macros" feature issue was resolved. Cyclic dependencies were broken. Texture format issues for storage and copying have been iteratively addressed.
+> - **Application Runs**: The application now compiles and runs without panics, displaying the output of the `raytrace.wgsl` compute shader via the blit pass.
 >
-> **Next immediate goal**: Implement basic raytracing via compute shaders in the `GpuRenderer` (ray generation, simple object intersection, and coloring). Concurrently, simplify the demo scene and begin work on camera controls.
+> **Next immediate goal**: Verify the visual output of the compute shader (ray directions) is correct. Then, simplify the demo scene in `src/main.rs` and implement basic sphere intersection in the `raytrace.wgsl` compute shader.
 
 ## Overview
 
@@ -165,18 +172,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ### Immediate Next Steps
 -   [x] **Integrate GpuRenderer Shell**: `Engine` can now initialize and use `GpuRenderer` to clear the screen. (`pixels` crate bypassed for GPU path). `tokio` integrated for async init.
--   [ ] **GPU Raytracing - Phase 1 (Basic Compute)**:
-    -   [ ] **Define GPU Data Structures**: Plan memory layouts for scene objects (spheres), materials (simple color), camera, and output texture in `rrte-renderer/src/gpu_renderer.rs`.
-    -   [ ] **Write WGSL Shaders (Minimal)**:
-        -   `ray_gen.wgsl`: Generates a ray per pixel/invocation.
-        -   `intersection.wgsl`: Simple sphere intersection logic.
-        -   `shading.wgsl`: Basic shading (e.g., object color or normal visualization).
-    -   [ ] **Setup Compute Pipeline**: In `GpuRenderer`, load shaders, create WGPU buffers, bind groups, and compute pipeline.
-    -   [ ] **Dispatch & Output**: Dispatch compute shaders. Render the output texture to the screen (e.g. via a simple textured quad in the existing render pass or direct to swapchain if possible).
+-   [x] **Resolve `rrte-scene` Path Issue**: Fix the compilation error related to the missing `rrte-scene/Cargo.toml`. (Created and integrated)
+-   [x] **GPU Raytracing - Phase 1 (Basic Compute & Display)**:
+    -   [x] **Define GPU Data Structures**: Rust and WGSL structs for Camera, Sphere, Material defined. WGPU Buffers created.
+    -   [x] **Write WGSL Shaders (Minimal - Ray Generation & Blit)**:
+        -   `raytrace.wgsl`: Generates a ray per pixel/invocation. Colors pixel by ray direction.
+        -   `blit.wgsl`: Fullscreen triangle pass to copy/swizzle `raytrace.wgsl` output to swapchain. Shader validation errors fixed.
+        -   [ ] `intersection.wgsl` / Update `raytrace.wgsl`: Simple sphere intersection logic.
+        -   [ ] `shading.wgsl` / Update `raytrace.wgsl`: Basic shading (e.g., object color or normal visualization post-intersection).
+    -   [x] **Setup Compute Pipeline**: In `GpuRenderer`, shaders loaded, WGPU buffers, bind groups, and compute pipeline created.
+    -   [x] **Setup Blit Pipeline**: In `GpuRenderer`, blit shader, pipeline, and resources created.
+    -   [x] **Dispatch & Output**: Compute shader dispatched. Output texture rendered to swapchain via blit pass.
+-   [ ] **Verify Visual Output**: Confirm the ray-direction visualization from the compute shader is working as expected.
 -   [ ] **Simplify Demo Scene**: Modify `src/main.rs create_demo_scene` for a ground plane + optional simple object. This scene data will then be used for the GPU buffers.
 -   [ ] **Camera Controls**: Implement basic camera controls (e.g., orbit, zoom) via `winit` input. Update camera data for GPU buffers.
 -   [ ] **Code Cleanup**: Address compiler warnings (`cargo fix`), improve `unwrap()` handling.
--   [ ] **Resolve Exit Code**: Investigate `0xcfffffff` exit code on Windows.
+-   [ ] **Resolve Exit Code**: Investigate `0xcfffffff` exit code on Windows (if still present after current changes).
 
 ### Core Engine & Renderer Enhancements
 -   [ ] **GPU Raytracing - Phase 2 (Core Features)**:

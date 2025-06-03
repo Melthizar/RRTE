@@ -2,6 +2,11 @@ use wgpu::{Device, Queue, Surface, SurfaceConfiguration, TextureFormat};
 use winit::window::Window;
 use anyhow::Result;
 use std::sync::Arc;
+use wgpu::util::DeviceExt;
+use glam::{Vec3, Mat4};
+// use crate::RendererConfig; // Commented out to investigate usage
+// use rrte_scene::Scene; // Removed this import
+use log::{info, warn, error};
 
 /// GPU renderer configuration
 #[derive(Debug, Clone)]
@@ -18,32 +23,332 @@ impl Default for GpuRendererConfig {
         Self {
             width: 800,
             height: 600,
-            format: TextureFormat::Bgra8UnormSrgb,
+            format: TextureFormat::Rgba8UnormSrgb,
             present_mode: wgpu::PresentMode::Fifo,
             samples: 1,
         }
     }
 }
 
+// NEW GPU DATA STRUCTURES
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct CameraGpu {
+    pub position: [f32; 4], // Using [f32; 4] for alignment (vec3 needs padding in std140/std430)
+    pub view_projection: [[f32; 4]; 4], // Mat4
+    pub inv_projection: [[f32; 4]; 4], // Mat4 for reconstructing view direction
+    pub inv_view: [[f32; 4]; 4], // Mat4 for reconstructing view direction
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct SphereGpu {
+    pub center: [f32; 4], // vec3 + padding for radius or material_id alignment
+    pub radius: f32,
+    pub material_index: u32,
+    _padding: [u32; 2], // Ensure alignment to 16 bytes if needed, or for future fields
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct MaterialGpu {
+    pub color: [f32; 4], // rgba
+    pub material_type: u32, // 0: Lambertian, 1: Metal, etc.
+    pub smoothness: f32, // For metal, roughness etc.
+    _padding: [u32; 2], // Ensure alignment
+}
+// END NEW GPU DATA STRUCTURES
+
 /// GPU-based renderer using wgpu
 pub struct GpuRenderer {
     config: GpuRendererConfig,
-    device: Option<Device>,
-    queue: Option<Queue>,
-    surface: Option<Surface<'static>>,
-    surface_config: Option<SurfaceConfiguration>,
+    pub device: Arc<wgpu::Device>,
+    pub queue: Arc<wgpu::Queue>,
+    pub surface_config: wgpu::SurfaceConfiguration,
+    pub surface: Arc<wgpu::Surface<'static>>,
+    
+    // Compute pass resources
+    camera_buffer: wgpu::Buffer,
+    sphere_buffer: wgpu::Buffer,
+    material_buffer: wgpu::Buffer,
+    output_texture: wgpu::Texture,          // Stores the result of the compute shader (Rgba8Unorm)
+    output_texture_view: wgpu::TextureView, 
+    compute_pipeline: wgpu::ComputePipeline,
+    compute_bind_group_layout: wgpu::BindGroupLayout, // Renamed for clarity
+    compute_bind_group: wgpu::BindGroup,           // Renamed for clarity
+
+    // Blit pass resources (for copying output_texture to swap chain)
+    sampler: wgpu::Sampler,
+    blit_bind_group_layout: wgpu::BindGroupLayout,
+    blit_bind_group: wgpu::BindGroup,
+    blit_pipeline: wgpu::RenderPipeline,
 }
 
 impl GpuRenderer {
     /// Create a new GPU renderer
-    pub fn new(config: GpuRendererConfig) -> Self {
-        Self {
-            config,
-            device: None,
-            queue: None,
-            surface: None,
-            surface_config: None,
-        }
+    pub async fn new(
+        config: &GpuRendererConfig,
+        device: Arc<wgpu::Device>,
+        queue: Arc<wgpu::Queue>,
+        surface_config: wgpu::SurfaceConfiguration,
+        surface: Arc<wgpu::Surface<'static>>,
+        _window: Option<Arc<Window>> // May be needed for aspect ratio, etc.
+    ) -> anyhow::Result<Self> {
+        info!("Initializing GpuRenderer");
+
+        // --- Compute Pass Resources ---
+
+        // Create Camera Buffer
+        let default_camera_gpu = CameraGpu {
+            position: [0.0, 0.0, 0.0, 1.0],
+            view_projection: Mat4::IDENTITY.to_cols_array_2d(),
+            inv_projection: Mat4::IDENTITY.to_cols_array_2d(),
+            inv_view: Mat4::IDENTITY.to_cols_array_2d(),
+        };
+        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera Buffer"),
+            contents: bytemuck::bytes_of(&default_camera_gpu),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let initial_spheres_gpu: Vec<SphereGpu> = vec![SphereGpu {
+            center: [0.0, 0.0, 0.0, 0.0], radius: 0.0, material_index: 0, _padding: [0,0]
+        }; 10];
+        let sphere_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Sphere Buffer"),
+            contents: bytemuck::cast_slice(&initial_spheres_gpu),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        });
+        
+        let initial_materials_gpu: Vec<MaterialGpu> = vec![MaterialGpu {
+            color: [0.0,0.0,0.0,0.0], material_type: 0, smoothness: 0.0, _padding: [0,0]
+        }; 5];
+        let material_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Material Buffer"),
+            contents: bytemuck::cast_slice(&initial_materials_gpu),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let output_texture_descriptor = wgpu::TextureDescriptor {
+            label: Some("Output Texture (Rgba8Unorm)"),
+            size: wgpu::Extent3d {
+                width: surface_config.width,
+                height: surface_config.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC, // COPY_SRC might not be needed if only blitting
+            view_formats: &[],
+        };
+        let output_texture = device.create_texture(&output_texture_descriptor);
+        let output_texture_view = output_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let compute_shader_source = include_str!("shaders/raytrace.wgsl");
+        let compute_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Raytrace Shader Module"),
+            source: wgpu::ShaderSource::Wgsl(compute_shader_source.into()),
+        });
+
+        let compute_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Raytrace Compute Bind Group Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry { // CameraGpu
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<CameraGpu>() as u64),
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry { // Spheres
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<SphereGpu>() as u64),
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry { // Materials
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<MaterialGpu>() as u64),
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry { // Output Texture (Storage)
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::StorageTexture {
+                        access: wgpu::StorageTextureAccess::WriteOnly,
+                        format: wgpu::TextureFormat::Rgba8Unorm,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let compute_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Raytrace Compute Pipeline Layout"),
+            bind_group_layouts: &[&compute_bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Raytrace Compute Pipeline"),
+            layout: Some(&compute_pipeline_layout),
+            module: &compute_shader_module,
+            entry_point: "main",
+        });
+
+        let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Raytrace Compute Bind Group"),
+            layout: &compute_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: camera_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: sphere_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: material_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&output_texture_view),
+                },
+            ],
+        });
+
+        // --- Blit Pass Resources ---
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Blit Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear, // or Nearest
+            min_filter: wgpu::FilterMode::Linear, // or Nearest
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let blit_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Blit Bind Group Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry { // Input Texture (output_texture from compute pass)
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry { // Sampler
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+
+        let blit_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Blit Bind Group"),
+            layout: &blit_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&output_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+        
+        let blit_shader_source = include_str!("shaders/blit.wgsl");
+        let blit_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Blit Shader Module"),
+            source: wgpu::ShaderSource::Wgsl(blit_shader_source.into()),
+        });
+
+        let blit_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Blit Pipeline Layout"),
+            bind_group_layouts: &[&blit_bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let blit_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Blit Render Pipeline"),
+            layout: Some(&blit_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &blit_shader_module,
+                entry_point: "vs_main",
+                buffers: &[], // No vertex buffers, vertices generated in shader
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &blit_shader_module,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: surface_config.format, // Target the swap chain format
+                    blend: Some(wgpu::BlendState::REPLACE), // Opaque
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None, // No culling for a fullscreen triangle/quad
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+        });
+
+        Ok(Self {
+            config: config.clone(),
+            device,
+            queue,
+            surface_config,
+            surface,
+            camera_buffer,
+            sphere_buffer,
+            material_buffer,
+            output_texture,
+            output_texture_view,
+            compute_pipeline,
+            compute_bind_group_layout, // Renamed
+            compute_bind_group,      // Renamed
+            sampler,
+            blit_bind_group_layout,
+            blit_bind_group,
+            blit_pipeline,
+        })
     }
 
     /// Initialize the GPU renderer with a window
@@ -105,73 +410,155 @@ impl GpuRenderer {
         surface.configure(&device, &surface_config);
 
         // Store the initialized components
-        self.device = Some(device);
-        self.queue = Some(queue);
-        self.surface = Some(surface);
-        self.surface_config = Some(surface_config);
+        self.device = Arc::new(device);
+        self.queue = Arc::new(queue);
+        self.surface = Arc::new(surface);
+        self.surface_config = surface_config;
 
         Ok(())
     }
 
     /// Render a frame
-    pub fn render(&mut self) -> Result<()> {
-        let device = self.device.as_ref().ok_or_else(|| anyhow::anyhow!("Device not initialized"))?;
-        let queue = self.queue.as_ref().ok_or_else(|| anyhow::anyhow!("Queue not initialized"))?;
-        let surface = self.surface.as_ref().ok_or_else(|| anyhow::anyhow!("Surface not initialized"))?;
+    pub fn render(
+        &mut self,
+        target_swap_chain_texture: &wgpu::Texture, // This is the actual swap chain texture
+        camera_transform: &Mat4, // World to View
+        camera_projection: &Mat4  // View to Clip
+    ) -> anyhow::Result<()> {
+        // 1. Update Camera Buffer
+        let camera_gpu = CameraGpu {
+            position: camera_transform.col(3).to_array(), // Assuming camera_transform is view matrix, position is in its 4th column
+            view_projection: (*camera_projection * *camera_transform).to_cols_array_2d(),
+            inv_projection: camera_projection.inverse().to_cols_array_2d(),
+            inv_view: camera_transform.inverse().to_cols_array_2d(),
+        };
+        self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera_gpu));
 
-        // Get the next frame
-        let output = surface.get_current_texture()?;
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        // 2. TODO: Update Sphere and Material Buffers (if scene changed)
+        // For now, they use initial placeholder data.
 
-        // Create command encoder
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        // 3. Create Command Encoder
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Render Encoder"),
         });
 
-        // Begin render pass
+        // 4. Run Compute Pass (Raytracing)
         {
-            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Raytrace Compute Pass"),
+                timestamp_writes: None,
+            });
+            compute_pass.set_pipeline(&self.compute_pipeline);
+            compute_pass.set_bind_group(0, &self.compute_bind_group, &[]);
+            
+            // Dispatch based on output texture dimensions
+            // Divide by workgroup size (e.g., 8x8 as defined in raytrace.wgsl)
+            let workgroup_size_x = 8; 
+            let workgroup_size_y = 8;
+            let num_workgroups_x = (self.output_texture.width() + workgroup_size_x - 1) / workgroup_size_x;
+            let num_workgroups_y = (self.output_texture.height() + workgroup_size_y - 1) / workgroup_size_y;
+            compute_pass.dispatch_workgroups(num_workgroups_x, num_workgroups_y, 1);
+        } // compute_pass is dropped, releasing the borrow on encoder
+
+        // 5. Blit Pass (Copy compute output_texture to swap_chain_texture via render pipeline)
+        let target_swap_chain_view = target_swap_chain_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Blit Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: &target_swap_chain_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }), // Clear to black
                         store: wgpu::StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: None,
-                occlusion_query_set: None,
                 timestamp_writes: None,
+                occlusion_query_set: None,
             });
 
-            // TODO: Add actual rendering commands here
-        }
+            render_pass.set_pipeline(&self.blit_pipeline);
+            render_pass.set_bind_group(0, &self.blit_bind_group, &[]);
+            render_pass.draw(0..3, 0..1); // Draw 3 vertices for the fullscreen triangle
+        } // render_pass is dropped
 
-        // Submit commands
-        queue.submit(std::iter::once(encoder.finish()));
-        output.present();
+        // 6. Submit command buffer
+        self.queue.submit(std::iter::once(encoder.finish()));
 
         Ok(())
     }
 
-    /// Resize the renderer
-    pub fn resize(&mut self, width: u32, height: u32) -> Result<()> {
+    /// Resize GPU resources (e.g., output texture) when window size changes
+    pub fn resize(&mut self, width: u32, height: u32) -> anyhow::Result<()> {
+        if width == 0 || height == 0 {
+            warn!("Attempted to resize GpuRenderer to zero dimensions, skipping.");
+            return Ok(());
+        }
+        info!("Resizing GpuRenderer to {}x{}", width, height);
         self.config.width = width;
         self.config.height = height;
 
-        if let (Some(surface), Some(device), Some(surface_config)) = 
-            (&self.surface, &self.device, &mut self.surface_config) {
-            surface_config.width = width;
-            surface_config.height = height;
-            surface.configure(device, surface_config);
-        }
+        // Update surface configuration (caller, Engine, should do this and pass new one if necessary)
+        // self.surface.configure(&self.device, &self.surface_config); // This line is typically in Engine
 
+        // Recreate output texture with new size
+        let output_texture_descriptor = wgpu::TextureDescriptor {
+            label: Some("Output Texture (Rgba8Unorm)"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm, 
+            usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        };
+        self.output_texture = self.device.create_texture(&output_texture_descriptor);
+        self.output_texture_view = self.output_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        // Recreate compute bind group because output_texture_view changed
+        self.compute_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Raytrace Compute Bind Group (resized)"),
+            layout: &self.compute_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry { // Camera
+                    binding: 0,
+                    resource: self.camera_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry { // Spheres
+                    binding: 1,
+                    resource: self.sphere_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry { // Materials
+                    binding: 2,
+                    resource: self.material_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry { // Output Texture View
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&self.output_texture_view),
+                },
+            ],
+        });
+        
+        // Recreate blit bind group because output_texture_view changed
+        self.blit_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Blit Bind Group (resized)"),
+            layout: &self.blit_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&self.output_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        });
         Ok(())
     }
 
@@ -182,22 +569,33 @@ impl GpuRenderer {
 
     /// Check if the renderer is initialized
     pub fn is_initialized(&self) -> bool {
-        self.device.is_some() && self.queue.is_some() && self.surface.is_some()
+        // If the GpuRenderer instance exists, we assume it's initialized
+        // as device, queue, surface are not Options in the struct definition.
+        true 
     }
 
     /// Get the device reference
     pub fn device(&self) -> Option<&Device> {
-        self.device.as_ref()
+        Some(self.device.as_ref())
     }
 
     /// Get the queue reference
     pub fn queue(&self) -> Option<&Queue> {
-        self.queue.as_ref()
+        Some(self.queue.as_ref())
     }
 
     /// Get the surface configuration
     pub fn surface_config(&self) -> Option<&SurfaceConfiguration> {
-        self.surface_config.as_ref()
+        Some(&self.surface_config) // Assuming this should also be wrapped if consistent
+    }
+
+    pub fn get_current_texture(&self) -> Result<wgpu::SurfaceTexture, wgpu::SurfaceError> {
+        self.surface.get_current_texture()
+    }
+
+    pub fn get_aspect_ratio(&self) -> f32 {
+        if self.surface_config.height == 0 { return 1.0; } // Avoid division by zero
+        self.surface_config.width as f32 / self.surface_config.height as f32
     }
 }
 

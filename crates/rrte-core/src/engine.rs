@@ -1,12 +1,14 @@
-use crate::{Time, Scene, Events, Input};
+use crate::{Time, Events, Input};
 use rrte_renderer::{
     Raytracer, RaytracerConfig, Camera as RendererCamera, GpuRenderer, GpuRendererConfig,
 };
+use rrte_scene::Scene;
 use anyhow::Result;
 use log::{info, warn, error};
 use std::time::Instant;
 use std::sync::Arc;
 use winit::window::Window;
+use wgpu;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RendererMode {
@@ -73,7 +75,7 @@ pub struct Engine {
     state: EngineState,
     time: Time,
     renderer: ActiveRenderer,
-    scene: Scene,
+    scene: rrte_scene::Scene,
     camera: RendererCamera,
     events: Events,
     input: Input,
@@ -91,7 +93,7 @@ impl Engine {
 
         info!("Initializing RRTE Engine (Renderer pending)...");
 
-        let scene = Scene::new();
+        let scene = rrte_scene::Scene::new();
         let aspect_ratio = config.renderer_config.width as f32 / config.renderer_config.height as f32;
         let camera = RendererCamera::new_perspective(45.0_f32.to_radians(), aspect_ratio, 0.1, 100.0);
         let events = Events::new();
@@ -130,14 +132,93 @@ impl Engine {
                 info!("CPU Renderer initialized.");
             }
             RendererMode::Gpu => {
-                let window_handle = window.ok_or_else(|| anyhow::anyhow!("Window handle required for GPU renderer initialization"))?;
-                let mut gpu_renderer_config = self.config.gpu_renderer_config.clone();
-                gpu_renderer_config.width = self.config.renderer_config.width;
-                gpu_renderer_config.height = self.config.renderer_config.height;
+                let window_arc = window.ok_or_else(|| anyhow::anyhow!("Window handle required for GPU renderer initialization"))?;
+                
+                let mut gpu_config = self.config.gpu_renderer_config.clone();
+                // Ensure GPU config dimensions match the main config if not already set
+                // (These might have been set by update_resolution before renderer init)
+                if gpu_config.width == 0 { gpu_config.width = self.config.renderer_config.width; }
+                if gpu_config.height == 0 { gpu_config.height = self.config.renderer_config.height; }
+                if gpu_config.width == 0 || gpu_config.height == 0 {
+                    return Err(anyhow::anyhow!("GPU renderer dimensions are zero."));
+                }
 
-                let mut gpu_renderer = GpuRenderer::new(gpu_renderer_config);
-                gpu_renderer.initialize(window_handle).await?;
-                self.renderer = ActiveRenderer::Gpu(gpu_renderer);
+                // WGPU Instance
+                let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+                    backends: wgpu::Backends::all(),
+                    dx12_shader_compiler: Default::default(),
+                    flags: wgpu::InstanceFlags::default(),
+                    gles_minor_version: wgpu::Gles3MinorVersion::default(),
+                });
+
+                // Surface
+                // Safety: The window is kept alive by the main application loop.
+                let surface = unsafe { instance.create_surface_unsafe(
+                    wgpu::SurfaceTargetUnsafe::from_window(&window_arc)?
+                )}.map_err(|e| anyhow::anyhow!("Failed to create wgpu surface: {}", e))?;
+                let surface_arc = Arc::new(surface);
+
+                // Adapter
+                let adapter = instance
+                    .request_adapter(&wgpu::RequestAdapterOptions {
+                        power_preference: wgpu::PowerPreference::HighPerformance,
+                        compatible_surface: Some(&surface_arc),
+                        force_fallback_adapter: false,
+                    })
+                    .await
+                    .ok_or_else(|| anyhow::anyhow!("Failed to find a suitable GPU adapter."))?;
+                info!("Selected GPU: {}", adapter.get_info().name);
+
+                // Device and Queue
+                let (device, queue) = adapter
+                    .request_device(
+                        &wgpu::DeviceDescriptor {
+                            required_features: wgpu::Features::empty(), // Add features as needed
+                            required_limits: wgpu::Limits::default(),
+                            label: Some("RRTE Device"),
+                        },
+                        None, // Trace path
+                    )
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to create logical device and queue: {}", e))?;
+                
+                let device_arc = Arc::new(device);
+                let queue_arc = Arc::new(queue);
+
+                // Surface Configuration
+                let surface_caps = surface_arc.get_capabilities(&adapter);
+                // Shader code in GpuRenderer uses Bgra8UnormSrgb or similar, ensure it matches.
+                // GpuRendererConfig also has a format, use that.
+                let surface_format = gpu_config.format; 
+                if !surface_caps.formats.contains(&surface_format) {
+                    warn!("Preferred surface format {:?} not supported. Falling back to first supported format: {:?}", 
+                           surface_format, surface_caps.formats[0]);
+                    gpu_config.format = surface_caps.formats[0];
+                }
+
+                let surface_config = wgpu::SurfaceConfiguration {
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    format: gpu_config.format,
+                    width: gpu_config.width,
+                    height: gpu_config.height,
+                    present_mode: gpu_config.present_mode, 
+                    alpha_mode: surface_caps.alpha_modes[0], // Use first supported alpha mode
+                    view_formats: vec![],
+                    desired_maximum_frame_latency: 2, // Default value
+                };
+                surface_arc.configure(&device_arc, &surface_config);
+                self.config.gpu_renderer_config = gpu_config.clone(); // Store potentially updated format
+
+                let gpu_renderer_instance = GpuRenderer::new(
+                    &gpu_config, 
+                    device_arc, 
+                    queue_arc, 
+                    surface_config, 
+                    surface_arc, 
+                    Some(window_arc.clone())
+                ).await?;
+                
+                self.renderer = ActiveRenderer::Gpu(gpu_renderer_instance);
                 info!("GPU Renderer initialized.");
             }
         }
@@ -164,7 +245,7 @@ impl Engine {
             self.time.update();
             self.events.poll();
             self.input.update();
-            self.scene.update(self.time.delta_time());
+            // self.scene.update(self.time.delta_time()); // Commented out: Scene::update not yet on rrte_scene::Scene
             
             if let Err(e) = self.render_frame() {
                 error!("Render error in headless loop: {}", e);
@@ -185,13 +266,21 @@ impl Engine {
     pub fn render_frame(&mut self) -> Result<()> {
         match &mut self.renderer {
             ActiveRenderer::Cpu(raytracer) => {
-                let objects = self.scene.get_objects();
-                let lights = self.scene.get_lights();
-                let materials = self.scene.get_materials();
-                self.frame_buffer = raytracer.render(&objects, &lights, &materials, &self.camera);
+                // For now, render with empty vectors until Scene methods are available
+                self.frame_buffer = raytracer.render(&Vec::new(), &Vec::new(), &Vec::new(), &self.camera);
             }
             ActiveRenderer::Gpu(gpu_renderer) => {
-                gpu_renderer.render()?
+                let output_surface_texture = gpu_renderer.get_current_texture()?;
+                // self.camera.update_aspect_ratio(gpu_renderer.get_aspect_ratio()); // Removed, handled by update_resolution
+                
+                // GpuRenderer's render method now copies to the swap chain texture itself.
+                // We pass camera view and projection matrices.
+                gpu_renderer.render(
+                    &output_surface_texture.texture, // This is the swap chain texture
+                    &self.camera.view_matrix(), 
+                    &self.camera.projection_matrix()
+                )?;
+                output_surface_texture.present();
             }
             ActiveRenderer::None => {
                 return Err(anyhow::anyhow!("Renderer not initialized before render_frame call."));
@@ -291,8 +380,8 @@ impl Engine {
     pub fn config(&self) -> &EngineConfig { &self.config }
     pub fn config_mut(&mut self) -> &mut EngineConfig { &mut self.config }
     pub fn state(&self) -> &EngineState { &self.state }
-    pub fn scene_mut(&mut self) -> &mut Scene { &mut self.scene }
-    pub fn scene(&self) -> &Scene { &self.scene }
+    pub fn scene_mut(&mut self) -> &mut rrte_scene::Scene { &mut self.scene }
+    pub fn scene(&self) -> &rrte_scene::Scene { &self.scene }
     pub fn camera_mut(&mut self) -> &mut RendererCamera { &mut self.camera }
     pub fn camera(&self) -> &RendererCamera { &self.camera }
     pub fn time(&self) -> &Time { &self.time }
