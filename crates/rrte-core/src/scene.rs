@@ -2,7 +2,7 @@ use rrte_math::{Transform, Vec3, Color};
 use rrte_renderer::{SceneObject, Material, Light};
 use rrte_ecs::{Entity, World, Component};
 use std::sync::Arc;
-use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 /// Scene configuration
@@ -80,7 +80,7 @@ impl Scene {    /// Create a new empty scene
     }
 
     /// Update the scene
-    pub fn update(&mut self, delta_time: f32) {
+    pub fn update(&mut self, _delta_time: f32) {
         // Update entity systems
         // self.entity_manager_mut().update(delta_time); // FIXME: World has no update method
         

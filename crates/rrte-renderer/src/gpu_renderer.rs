@@ -71,6 +71,8 @@ pub struct PointLightGpu {
     pub range: f32, // Maximum distance the light affects
     _padding: [u32; 2], // Ensure alignment to 16 bytes
 }
+
+
 // END NEW GPU DATA STRUCTURES
 
 /// GPU-based renderer using wgpu

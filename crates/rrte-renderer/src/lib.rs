@@ -5,6 +5,9 @@ pub mod scene;
 pub mod light;
 pub mod gpu_renderer;
 pub mod camera;
+pub mod sdf;
+pub mod deformation;
+pub mod sdf_object;
 
 pub use raytracer::*;
 pub use material::*;
@@ -13,3 +16,6 @@ pub use scene::*;
 pub use light::*;
 pub use gpu_renderer::{GpuRenderer, GpuRendererConfig};
 pub use camera::*;
+pub use sdf::*;
+pub use deformation::*;
+pub use sdf_object::*;

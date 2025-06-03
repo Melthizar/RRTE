@@ -1,4 +1,4 @@
-use crate::{Asset, AssetHandle};
+use crate::Asset;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;

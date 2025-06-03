@@ -104,7 +104,7 @@ impl Camera {
     pub fn look_at(&mut self, target: Vec3, up: Vec3) {
         let forward = (target - self.transform.position).normalize();
         let right = forward.cross(up).normalize();
-        let up = right.cross(forward);        // Create rotation from forward direction  
+        let _up = right.cross(forward);        // Create rotation from forward direction  
         self.transform.rotation = Quat::from_rotation_arc(Vec3::NEG_Z, forward);
     }
 }

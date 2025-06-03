@@ -2,7 +2,7 @@ use crate::{Time, Events, Input};
 use rrte_renderer::{
     Raytracer, RaytracerConfig, Camera as RendererCamera, GpuRenderer, GpuRendererConfig,
 };
-use rrte_scene::Scene;
+
 use anyhow::Result;
 use log::{info, warn, error};
 use std::time::Instant;
@@ -298,8 +298,8 @@ impl Engine {
                 // GpuRenderer::render now takes spheres and lights directly to avoid cyclic dependency
                 gpu_renderer.render(
                     &output_surface_texture.texture, // This is the swap chain texture
-                    self.scene.objects(), // Pass spheres directly via accessor
-                    self.scene.lights(), // Pass lights directly via accessor
+                    self.scene.legacy_spheres(), // Pass legacy spheres for GPU compatibility
+                    self.scene.legacy_lights(), // Pass legacy lights for GPU compatibility
                     &self.camera
                 )?;
                 output_surface_texture.present();

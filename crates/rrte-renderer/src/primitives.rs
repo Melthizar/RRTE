@@ -3,7 +3,7 @@ use crate::Material;
 use std::sync::Arc;
 
 /// Trait for all renderable objects in the scene
-pub trait SceneObject: Send + Sync {
+pub trait SceneObject: Send + Sync + std::fmt::Debug {
     /// Test if a ray intersects with this object
     fn intersect(&self, ray: &Ray, t_min: f32, t_max: f32) -> Option<HitInfo>;
     

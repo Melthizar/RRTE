@@ -5,6 +5,8 @@ use anyhow::Result;
 use log::{info, error};
 use std::sync::Arc;
 use rrte_renderer::material::LambertianMaterial;
+
+mod advanced_demo;
 use pixels::{Pixels, SurfaceTexture};
 use winit::dpi::LogicalSize;
 use winit::event::{Event, WindowEvent};
@@ -63,12 +65,16 @@ async fn main() -> Result<()> {
     // Initialize renderer (now async and takes window handle)
     engine.initialize_renderer(Some(window.clone())).await?;
 
-    // Create the demo scene (materials and objects for CPU path, conceptually for GPU)
-    // For GPU, this data would need to be marshalled into buffers.
-    // We'll keep it for now, as GpuRenderer doesn't use it yet.
-    if let Err(e) = create_demo_scene(&mut engine) {
-        error!("Failed to create demo scene: {}. This might be fine if GpuRenderer is not using scene data yet.", e);
+    // Create the advanced demo scene showcasing SDF, CSG, and deformation features
+    if let Err(e) = advanced_demo::create_advanced_demo_scene(&mut engine) {
+        error!("Failed to create advanced demo scene: {}. Falling back to basic scene.", e);
+        if let Err(e2) = create_demo_scene(&mut engine) {
+            error!("Failed to create basic demo scene: {}", e2);
+        }
     }
+
+    // Initialize scene animation for orbiting camera and cycling lights
+    let scene_animation = advanced_demo::SceneAnimation::new();
 
     // Pixels is only for CPU rendering path. 
     // We initialize it but will only use it if engine.get_frame_buffer() is Some.
@@ -125,6 +131,11 @@ async fn main() -> Result<()> {
                 engine.input_mut().update();
                 engine.scene_mut().update(dt);
 
+                // Update scene animation (orbiting camera and cycling lights)
+                if let Err(e) = advanced_demo::update_scene_animation(&mut engine, &scene_animation) {
+                    error!("Scene animation update error: {}", e);
+                }
+
                 if let Err(e) = engine.render_frame() {
                     error!("Engine render_frame error: {}", e);
                     engine.stop();
@@ -172,10 +183,10 @@ fn create_demo_scene(engine: &mut Engine) -> Result<()> {
 
         // Create some basic spheres with materials
         let ground_sphere = Sphere::with_material(Vec3::new(0.0, -1000.0, 0.0), 1000.0, ground_material.clone());
-        scene.add_object(Arc::new(ground_sphere));
+        scene.add_sphere(Arc::new(ground_sphere));
 
         let center_sphere = Sphere::with_material(Vec3::new(0.0, 1.0, 0.0), 1.0, center_material.clone());
-        scene.add_object(Arc::new(center_sphere));
+        scene.add_sphere(Arc::new(center_sphere));
 
         // let left_sphere = Sphere::with_material(Vec3::new(-4.0, 1.0, 0.0), 1.0, left_material.clone()); // Removed
         // scene.add_object(Arc::new(left_sphere)); // Removed
@@ -198,14 +209,39 @@ fn create_demo_scene(engine: &mut Engine) -> Result<()> {
             Color::new(1.0, 1.0, 1.0, 1.0),
             25.0 // Reduced from 100.0 to 25.0 for less brightness
         );
-        scene.add_light(Arc::new(main_light));
+        scene.add_point_light(Arc::new(main_light));
 
-        // let fill_light = PointLight::new( // Removed
-        //     Vec3::new(-10.0, 5.0, 0.0), // Removed
-        //     Color::new(0.7, 0.8, 1.0, 1.0), // Removed
-        //     50.0 // Removed
-        // ); // Removed
-        // scene.add_light(Arc::new(fill_light)); // Removed
+        // Add blue fill light
+        let fill_light = PointLight::new(
+            Vec3::new(-10.0, 5.0, 0.0),
+            Color::new(0.7, 0.8, 1.0, 1.0), // Cool blue fill
+            15.0 // Subtle fill lighting
+        );
+        scene.add_light(Arc::new(fill_light));
+
+        // Add warm accent light
+        let accent_light = PointLight::new(
+            Vec3::new(0.0, 8.0, -8.0),
+            Color::new(1.0, 0.8, 0.6, 1.0), // Warm orange
+            12.0 // Subtle accent
+        );
+        scene.add_light(Arc::new(accent_light));
+
+        // Add a rim light for dramatic effect
+        let rim_light = PointLight::new(
+            Vec3::new(-8.0, 2.0, 2.0),
+            Color::new(0.8, 0.9, 1.0, 1.0), // Cool blue rim
+            10.0 // Rim lighting intensity
+        );
+        scene.add_light(Arc::new(rim_light));
+
+        // Add a subtle floor bounce light
+        let bounce_light = PointLight::new(
+            Vec3::new(3.0, -0.5, 3.0), // Low to the ground
+            Color::new(0.9, 0.7, 0.6, 1.0), // Warm bounce
+            8.0 // Subtle bounce
+        );
+        scene.add_light(Arc::new(bounce_light));
     }
 
     // --- Camera Setup ---

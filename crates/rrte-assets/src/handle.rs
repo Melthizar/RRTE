@@ -1,5 +1,4 @@
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
 use crate::Asset;
 
 /// Handle to an asset

@@ -2,7 +2,7 @@ use rrte_math::{Vec3, Color, Transform};
 use serde::{Deserialize, Serialize};
 
 /// Trait for all light sources
-pub trait Light: Send + Sync {
+pub trait Light: Send + Sync + std::fmt::Debug {
     /// Get the light's contribution at a given point
     fn illuminate(&self, point: Vec3, normal: Vec3) -> LightContribution;
     
