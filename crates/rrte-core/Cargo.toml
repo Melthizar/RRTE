@@ -1,0 +1,17 @@
+[package]
+name = "rrte-core"
+version = "0.1.0"
+edition = "2021"
+description = "Core engine functionality for RRTE"
+
+[dependencies]
+rrte-math = { path = "../rrte-math" }
+rrte-renderer = { path = "../rrte-renderer" }
+rrte-ecs = { path = "../rrte-ecs" }
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+log.workspace = true
+env_logger.workspace = true
+tokio.workspace = true

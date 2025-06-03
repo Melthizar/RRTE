@@ -1,0 +1,11 @@
+[package]
+name = "rrte-math"
+version = "0.1.0"
+edition = "2021"
+description = "Mathematical utilities for RRTE engine"
+
+[dependencies]
+glam.workspace = true
+nalgebra.workspace = true
+serde.workspace = true
+rand = "0.8"

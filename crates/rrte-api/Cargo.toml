@@ -1,0 +1,18 @@
+[package]
+name = "rrte-api"
+version = "0.1.0"
+edition = "2021"
+description = "Public API for RRTE engine"
+
+[dependencies]
+rrte-core = { path = "../rrte-core" }
+rrte-math = { path = "../rrte-math" }
+rrte-renderer = { path = "../rrte-renderer" }
+rrte-ecs = { path = "../rrte-ecs" }
+rrte-plugin = { path = "../rrte-plugin" }
+rrte-assets = { path = "../rrte-assets" }
+
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+log.workspace = true

@@ -1,0 +1,12 @@
+[package]
+name = "rrte-ecs"
+version = "0.1.0"
+edition = "2021"
+description = "Entity Component System for RRTE engine"
+
+[dependencies]
+rrte-math = { path = "../rrte-math" }
+serde.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+log.workspace = true

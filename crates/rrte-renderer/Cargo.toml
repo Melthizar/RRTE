@@ -1,0 +1,19 @@
+[package]
+name = "rrte-renderer"
+version = "0.1.0"
+edition = "2021"
+description = "Raytracing renderer for RRTE engine"
+
+[dependencies]
+rrte-math = { path = "../rrte-math" }
+rrte-ecs = { path = "../rrte-ecs" }
+
+wgpu.workspace = true
+winit.workspace = true
+bytemuck.workspace = true
+image.workspace = true
+rayon.workspace = true
+anyhow.workspace = true
+log.workspace = true
+serde.workspace = true
+rand = "0.8"

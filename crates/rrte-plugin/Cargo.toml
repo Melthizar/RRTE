@@ -1,0 +1,16 @@
+[package]
+name = "rrte-plugin"
+version = "0.1.0"
+edition = "2021"
+description = "Plugin system for RRTE engine"
+
+[dependencies]
+rrte-core = { path = "../rrte-core" }
+rrte-ecs = { path = "../rrte-ecs" }
+libloading.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+log.workspace = true
+toml.workspace = true

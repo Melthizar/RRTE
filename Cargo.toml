@@ -1,0 +1,72 @@
+[workspace]
+members = [
+    "crates/rrte-core",
+    "crates/rrte-math",
+    "crates/rrte-renderer",
+    "crates/rrte-ecs",
+    "crates/rrte-assets",
+    "crates/rrte-plugin",
+    "crates/rrte-api",
+]
+resolver = "2"
+
+[workspace.dependencies]
+# Math and linear algebra
+glam = { version = "0.24", features = ["serde"] }
+nalgebra = "0.32"
+
+# Graphics and windowing
+winit = "0.29"
+wgpu = "0.19"
+bytemuck = { version = "1.14", features = ["derive"] }
+
+# Image processing
+image = "0.24"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Async runtime
+tokio = { version = "1.0", features = ["full"] }
+
+# Plugin system
+libloading = "0.8"
+
+# Configuration
+toml = "0.8"
+
+# Logging
+log = "0.4"
+env_logger = "0.10"
+
+# Performance
+rayon = "1.8"
+
+[package]
+name = "rrte-engine"
+version = "0.1.0"
+edition = "2021"
+authors = ["RRTE Engine Team"]
+description = "A modular 3D raytracing-based game engine"
+license = "MIT OR Apache-2.0"
+keywords = ["gamedev", "raytracing", "3d", "engine", "graphics"]
+categories = ["game-development", "graphics", "rendering"]
+
+[dependencies]
+rrte-core = { path = "crates/rrte-core" }
+rrte-math = { path = "crates/rrte-math" }
+rrte-renderer = { path = "crates/rrte-renderer" }
+rrte-ecs = { path = "crates/rrte-ecs" }
+rrte-assets = { path = "crates/rrte-assets" }
+rrte-plugin = { path = "crates/rrte-plugin" }
+rrte-api = { path = "crates/rrte-api" }
+
+anyhow.workspace = true
+log.workspace = true
+env_logger.workspace = true
+tokio.workspace = true
