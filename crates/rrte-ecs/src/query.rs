@@ -57,6 +57,14 @@ pub struct ComplexQuery {
 }
 
 impl ComplexQuery {
+    pub fn required(&self) -> &[std::any::TypeId] {
+        &self.required_components
+    }
+
+    pub fn optional(&self) -> &[std::any::TypeId] {
+        &self.optional_components
+    }
+
     pub fn execute(&self, entities: &[Entity]) -> Vec<Entity> {
         // This would need proper implementation
         entities.to_vec()

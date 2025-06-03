@@ -22,8 +22,11 @@ pub enum ProjectionType {
 /// Camera component for rendering
 #[derive(Debug, Clone)]
 pub struct Camera {
+    /// Camera transform in world space
     pub transform: Transform,
+    /// Projection information
     pub projection: ProjectionType,
+    /// Whether the camera is currently active
     pub is_active: bool,
 }
 
@@ -83,7 +86,7 @@ impl Camera {
         // Ensure self.transform.position is set before calling this
         let forward = (target - self.transform.position).normalize();
         let right = forward.cross(up).normalize();
-        let actual_up = right.cross(forward); // Recalculate up vector to be orthogonal
+        let _actual_up = right.cross(forward); // Recalculate up vector to be orthogonal
         self.transform.rotation = Quat::from_rotation_arc(Vec3::NEG_Z, forward);
         // Note: A more robust look_at might involve creating a rotation matrix
         // from the basis vectors (right, actual_up, -forward) and then converting to Quat.

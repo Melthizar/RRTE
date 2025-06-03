@@ -1,4 +1,4 @@
-use rrte_math::{Ray, HitInfo, Vec3, Color};
+use rrte_math::{Ray, HitInfo, Color};
 use crate::{Material, SceneObject, Light, Camera};
 use rayon::prelude::*;
 use std::sync::Arc;

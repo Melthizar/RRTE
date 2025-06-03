@@ -1,3 +1,8 @@
+//! Scene management utilities for the RRTE engine.
+//!
+//! This crate defines scene data structures used by the renderer
+//! and gameplay systems.
+
 use rrte_math::{Transform, Vec3, Color};
 use rrte_renderer::{SceneObject, Material, Light, primitives::Sphere, light::PointLight};
 use rrte_ecs::{Entity, World, Component};
@@ -8,10 +13,15 @@ use serde::{Deserialize, Serialize};
 /// Scene configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SceneConfig {
+    /// Name of the scene
     pub name: String,
+    /// Global ambient light color
     pub ambient_light: Color,
+    /// Fog color used for atmospheric effects
     pub fog_color: Color,
+    /// Fog density value
     pub fog_density: f32,
+    /// Gravity vector applied to physics objects
     pub gravity: Vec3,
 }
 
@@ -30,8 +40,11 @@ impl Default for SceneConfig {
 /// Scene component for objects that exist in 3D space
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SceneComponent {
+    /// World transform of the entity
     pub transform: Transform,
+    /// Visibility flag
     pub visible: bool,
+    /// Rendering layer mask
     pub layer: u32,
 }
 

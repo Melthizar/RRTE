@@ -94,3 +94,7 @@ rrte-plugin = { path = "crates/rrte-plugin" }
 # Core engine dependencies (no windowing here - that's for applications)
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 wgpu = { version = "0.19" }
+
+[features]
+gpu = []
+plugins = []
