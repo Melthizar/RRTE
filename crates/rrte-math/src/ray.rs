@@ -1,4 +1,4 @@
-use glam::{Vec3, Vec4};
+use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// A ray in 3D space with origin and direction

@@ -1,3 +1,7 @@
+//! Core engine infrastructure.
+//!
+//! This crate contains the main engine loop and foundational systems.
+
 pub mod engine;
 pub mod time;
 pub mod input;

@@ -23,7 +23,6 @@ pub mod constants {
 
 /// Utility functions for common mathematical operations
 pub mod utils {
-    use super::*;
 
     /// Clamp a value between min and max
     pub fn clamp(value: f32, min: f32, max: f32) -> f32 {

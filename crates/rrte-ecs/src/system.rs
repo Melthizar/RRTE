@@ -1,4 +1,4 @@
-use crate::{Entity, Component, ComponentStorage};
+use crate::{Entity, ComponentStorage};
 
 /// A trait for systems that operate on entities and components
 pub trait System {

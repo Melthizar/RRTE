@@ -28,7 +28,7 @@ impl World {
     pub fn destroy_entity(&mut self, entity: Entity) {
         self.entities.retain(|&e| e != entity);
         // Remove components for this entity from all managers
-        for manager in self.component_managers.values_mut() {
+        for _manager in self.component_managers.values_mut() {
             // This would need to be implemented properly
             // manager.remove_component(entity);
         }

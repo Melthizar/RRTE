@@ -1,16 +1,15 @@
-use wgpu::{Device, Queue, Surface, SurfaceConfiguration, TextureFormat};
+use wgpu::{Device, Queue, SurfaceConfiguration, TextureFormat};
 use winit::window::Window;
 use anyhow::Result;
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
-use glam::{Vec3, Mat4};
+use glam::Mat4;
 // use crate::RendererConfig; // Commented out to investigate usage
 use crate::camera::Camera as RendererCamera; // Added import for RendererCamera
-use crate::material::Material; // Added for material handling
 use crate::primitives::Sphere; // Added for sphere handling
 use crate::light::PointLight; // Added for light handling
 use std::collections::HashMap; // Added for material map
-use log::{info, warn, error};
+use log::{info, warn};
 
 /// GPU renderer configuration
 #[derive(Debug, Clone)]
