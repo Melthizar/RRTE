@@ -34,6 +34,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "512761e0bb2578dd7380c6baaa0f4ce03e84f95e960231d1dec8bf4d7d6e2627"
 
 [[package]]
+name = "advanced-demo"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger",
+ "instant",
+ "log",
+ "pixels",
+ "raw-window-handle",
+ "rrte-engine",
+ "tokio",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
 name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -164,6 +180,21 @@ dependencies = [
  "object",
  "rustc-demangle",
  "windows-targets 0.52.6",
+]
+
+[[package]]
+name = "basic-demo"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger",
+ "log",
+ "pixels",
+ "raw-window-handle",
+ "rrte-engine",
+ "tokio",
+ "wgpu",
+ "winit",
 ]
 
 [[package]]
@@ -835,6 +866,15 @@ checksum = "cea70ddb795996207ad57735b50c5982d8844f38ba9ee5f1aedcfb708a2aa11e"
 dependencies = [
  "equivalent",
  "hashbrown 0.15.3",
+]
+
+[[package]]
+name = "instant"
+version = "0.1.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0242819d153cba4b4b05a5a8f2a7e9bbf97b6055b2a002b395c96b5ff3c0222"
+dependencies = [
+ "cfg-if",
 ]
 
 [[package]]
@@ -1614,8 +1654,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "log",
- "pixels",
- "raw-window-handle",
  "rrte-api",
  "rrte-assets",
  "rrte-core",
@@ -1623,9 +1661,9 @@ dependencies = [
  "rrte-math",
  "rrte-plugin",
  "rrte-renderer",
+ "rrte-scene",
  "tokio",
  "wgpu",
- "winit",
 ]
 
 [[package]]
@@ -1774,6 +1812,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdf-showcase"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger",
+ "instant",
+ "log",
+ "pixels",
+ "raw-window-handle",
+ "rrte-engine",
+ "tokio",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
 name = "serde"
 version = "1.0.219"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1838,6 +1892,21 @@ name = "simd-adler32"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d66dc143e6b11c1eddc06d5c423cfc97062865baf299914ab64caa38182078fe"
+
+[[package]]
+name = "simple-demo"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger",
+ "log",
+ "pixels",
+ "raw-window-handle",
+ "rrte-engine",
+ "tokio",
+ "wgpu",
+ "winit",
+]
 
 [[package]]
 name = "slab"

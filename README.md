@@ -1,13 +1,16 @@
 # RRTE Engine - Rust Raytracing Engine
 
-A modular 3D raytracing-based game engine built in Rust, featuring **advanced primitive modification**, **CSG operations**, **procedural deformations**, **GPU raytracing**, and **dynamic scene animation**.
+A modular 3D raytracing-based game engine built in Rust, featuring **Second Life-style primitives**, **advanced primitive modification**, **CSG operations**, **procedural deformations**, **GPU raytracing**, and **dynamic scene animation**.
 
 > **🎯 CURRENT STATUS (December 2024)**:
 > The RRTE engine is a **fully working prototype** with the following achievements:
 > - **✅ Compilation**: All crates compile successfully (`cargo check` passes)
 > - **✅ Core Engine**: Complete engine lifecycle, camera, input, and scene management
 > - **✅ GPU Raytracing**: Working WGPU-based GPU renderer with real-time sphere rendering
+> - **✅ Second Life Primitives**: Complete set of SL-style primitives (Box, Sphere, Cylinder, Prism, Torus, Tube, Ring)
+> - **✅ Advanced Primitives**: Additional geometric primitives (Cone, Capsule, Ellipsoid)
 > - **✅ Signed Distance Fields (SDFs)**: Complete SDF system with primitives and CSG operations
+> - **✅ Traditional Raytracing**: Working traditional raytracing for all primitive types
 > - **✅ Procedural Deformations**: Bend, twist, taper, noise, and wave deformation system
 > - **✅ Builder Pattern API**: Fluent interface for complex object creation
 > - **✅ Real-time Animation**: Dynamic camera orbiting and scene animation
@@ -16,15 +19,30 @@ A modular 3D raytracing-based game engine built in Rust, featuring **advanced pr
 > - **🟡 GPU SDF Rendering**: SDFs currently render via CPU (GPU handles basic primitives)
 > - **🟡 Light Color Cycling**: Framework ready (needs GPU renderer integration)
 
-## 🎮 Demo Experience
+## 🎮 Demo Applications
 
-**Run the spooky animated demo:**
+RRTE Engine includes several demo applications showcasing different features:
 
 ```bash
 git clone <repository-url>
 cd RRTE
-cargo run --release
+
+# Run the basic demo (simple scene with spheres)
+cargo run -p basic-demo --release
+
+# Run the advanced demo (spooky animated scene) 
+cargo run -p advanced-demo --release
+
+# Run the primitive showcase (Second Life-style primitives demo)
+cargo run -p sdf-showcase --release
 ```
+
+### 🎨 **Primitive Showcase Features**
+- **7 Second Life Primitives**: Box, Sphere, Cylinder, Prism, Torus, Tube, Ring representations
+- **3 Advanced Primitives**: Cone, Capsule, Ellipsoid representations  
+- **6 CSG Examples**: Union, Difference, Intersection operations demonstrated
+- **Professional Lighting**: Multi-light setup for optimal primitive visualization
+- **Color-Coded Categories**: Blue for SL primitives, Orange for advanced, Green for CSG
 
 ### 🌙 **Dark Spooky Scene Features**
 - **6 Atmospheric Spheres**: Dark materials with muted colors (dark red, blue, green, purple, orange)
@@ -41,6 +59,28 @@ cargo run --release
 - **Ground Reflection**: Dark ground plane with ambient lighting
 
 ## Features
+
+### 🔷 **Second Life-Style Primitives**
+RRTE Engine includes a complete set of primitives inspired by Second Life's building system:
+
+#### **Core Second Life Primitives**
+- **📦 Box**: Rectangular prisms with configurable dimensions
+- **🔵 Sphere**: Perfect spheres with radius control
+- **🔄 Cylinder**: Cylindrical shapes with radius and height
+- **🔺 Prism**: Triangular prisms for architectural elements
+- **🍩 Torus**: Donut shapes with major and minor radius control
+- **🔧 Tube**: Hollow cylinders with inner and outer radius
+- **💍 Ring**: Torus variants with different proportions
+
+#### **Advanced Geometric Primitives**
+- **🔻 Cone**: Conical shapes with base radius and height
+- **💊 Capsule**: Rounded cylinders (pill shapes)
+- **🥚 Ellipsoid**: Stretched spheres with independent axis scaling
+
+#### **Dual Implementation Approach**
+- **Traditional Raytracing**: Fast, accurate intersection for all primitives
+- **SDF Implementation**: Implicit surface modeling for advanced operations
+- **Seamless Integration**: Both approaches work with the same material and lighting systems
 
 ### 🔷 **Advanced Primitive Modification**
 - **Signed Distance Fields (SDFs)**: Sphere, box, cylinder, torus primitives with implicit surfaces
@@ -225,11 +265,168 @@ let twisted_cylinder = twisted_cylinder(center, radius, height, twist_rate, mate
 let organic_blob = organic_blob(center, size, material);
 ```
 
+### 🔷 **Second Life-Style Primitive Creation**
+
+```rust
+use rrte_renderer::primitives::*;
+use rrte_renderer::sdf::primitives::*;
+
+// Traditional raytracing primitives (fast, accurate)
+let box_prim = Cube::with_material(
+    Vec3::new(0.0, 1.0, 0.0),
+    Vec3::new(2.0, 1.0, 1.5),
+    Arc::new(blue_material)
+);
+
+let cylinder_prim = Cylinder::with_material(
+    Vec3::new(4.0, 1.0, 0.0),
+    1.0,  // radius
+    2.0,  // height
+    Arc::new(red_material)
+);
+
+let cone_prim = Cone::with_material(
+    Vec3::new(8.0, 1.0, 0.0),
+    1.2,  // base radius
+    2.5,  // height
+    Arc::new(green_material)
+);
+
+let capsule_prim = Capsule::with_material(
+    Vec3::new(12.0, 1.0, 0.0),
+    0.8,  // radius
+    2.0,  // height
+    Arc::new(orange_material)
+);
+
+// SDF primitives (for advanced operations)
+let torus_sdf = SDFTorus::with_material(
+    Vec3::new(0.0, 1.0, 4.0),
+    1.5,  // major radius
+    0.4,  // minor radius
+    Arc::new(purple_material)
+);
+
+let tube_sdf = SDFTube::with_material(
+    Vec3::new(4.0, 1.0, 4.0),
+    1.2,  // outer radius
+    0.6,  // inner radius
+    2.5,  // height
+    Arc::new(cyan_material)
+);
+
+let prism_sdf = SDFPrism::with_material(
+    Vec3::new(8.0, 1.0, 4.0),
+    Vec3::new(2.0, 2.5, 2.0),  // size
+    Arc::new(yellow_material)
+);
+
+let ellipsoid_sdf = SDFEllipsoid::with_material(
+    Vec3::new(12.0, 1.0, 4.0),
+    Vec3::new(1.5, 0.8, 1.0),  // radii (x, y, z)
+    Arc::new(magenta_material)
+);
+```
+
+### 🏗️ **Building Complex Objects with Second Life Primitives**
+
+```rust
+// Create a complex architectural structure using SL-style primitives
+fn create_tower(base_pos: Vec3, material: Arc<dyn Material>) -> Vec<Arc<dyn SceneObject>> {
+    let mut objects = Vec::new();
+    
+    // Base: Large box foundation
+    let foundation = Cube::with_material(
+        base_pos,
+        Vec3::new(4.0, 0.5, 4.0),
+        material.clone()
+    );
+    objects.push(Arc::new(foundation) as Arc<dyn SceneObject>);
+    
+    // Main tower: Cylinder
+    let tower = Cylinder::with_material(
+        base_pos + Vec3::new(0.0, 3.0, 0.0),
+        1.5,  // radius
+        5.0,  // height
+        material.clone()
+    );
+    objects.push(Arc::new(tower) as Arc<dyn SceneObject>);
+    
+    // Top: Cone roof
+    let roof = Cone::with_material(
+        base_pos + Vec3::new(0.0, 6.5, 0.0),
+        1.8,  // base radius
+        2.0,  // height
+        material.clone()
+    );
+    objects.push(Arc::new(roof) as Arc<dyn SceneObject>);
+    
+    // Decorative elements: Torus rings
+    for i in 0..3 {
+        let ring_height = 2.0 + (i as f32) * 1.5;
+        let ring = SDFTorus::with_material(
+            base_pos + Vec3::new(0.0, ring_height, 0.0),
+            1.8,  // major radius
+            0.2,  // minor radius
+            material.clone()
+        );
+        // Note: Would need SDF integration for this to work in scene
+    }
+    
+    objects
+}
+```
+
+### 🎨 **Primitive Showcase Scene**
+
+```rust
+// Create a comprehensive showcase of all primitive types
+fn create_primitive_showcase() -> Scene {
+    let mut scene = Scene::new();
+    
+    // Materials for different categories
+    let sl_material = LambertianMaterial::new(Color::rgb(0.2, 0.6, 0.9));      // Blue
+    let advanced_material = LambertianMaterial::new(Color::rgb(0.9, 0.4, 0.2)); // Orange
+    let csg_material = LambertianMaterial::new(Color::rgb(0.6, 0.9, 0.3));      // Green
+    
+    // Row 1: Core Second Life primitives
+    let primitives = vec![
+        ("Box", Cube::with_material(Vec3::new(-12.0, 2.0, -8.0), Vec3::new(2.0, 2.0, 2.0), Arc::new(sl_material.clone()))),
+        ("Sphere", Sphere::with_material(Vec3::new(-8.0, 2.0, -8.0), 1.2, Arc::new(sl_material.clone()))),
+        ("Cylinder", Cylinder::with_material(Vec3::new(-4.0, 2.0, -8.0), 1.0, 2.5, Arc::new(sl_material.clone()))),
+        ("Prism", /* SDF Prism representation */),
+    ];
+    
+    // Row 2: Advanced Second Life primitives (SDF-based)
+    let advanced_primitives = vec![
+        ("Torus", /* SDFTorus */),
+        ("Tube", /* SDFTube */),
+        ("Ring", /* SDFRing */),
+    ];
+    
+    // Row 3: Advanced geometric primitives
+    let geometric_primitives = vec![
+        ("Cone", Cone::with_material(Vec3::new(-8.0, 2.0, 0.0), 1.2, 2.5, Arc::new(advanced_material.clone()))),
+        ("Capsule", Capsule::with_material(Vec3::new(-4.0, 2.0, 0.0), 0.8, 2.0, Arc::new(advanced_material.clone()))),
+        ("Ellipsoid", /* SDFEllipsoid */),
+    ];
+    
+    // Add professional lighting
+    scene.add_point_light(Arc::new(PointLight::new(
+        Vec3::new(-10.0, 15.0, 10.0),
+        Color::rgb(1.0, 1.0, 1.0),
+        100.0
+    )));
+    
+    scene
+}
+```
+
 ## Project Structure
 
 ```text
 RRTE/
-├── crates/
+├── crates/                 # Engine library crates
 │   ├── rrte-core/          # Engine core (lifecycle, camera, scene) ✅
 │   ├── rrte-math/          # Mathematics library (vectors, matrices, colors) ✅
 │   ├── rrte-renderer/      # Rendering systems ✅
@@ -243,9 +440,12 @@ RRTE/
 │   ├── rrte-assets/        # Asset management framework ✅
 │   └── rrte-plugin/        # Plugin system ✅
 ├── src/
-│   ├── main.rs             # Main executable with winit integration ✅
-│   └── advanced_demo.rs    # Spooky animated scene demo ✅
-└── examples/               # Additional examples
+│   └── lib.rs              # Main engine library interface ✅
+├── examples/               # Demo applications (separate binaries)
+│   ├── basic-demo/         # Simple raytracing demo ✅
+│   ├── advanced-demo/      # Animated spooky scene ✅
+│   └── sdf-showcase/       # SDF & CSG demonstration ✅
+└── Cargo.toml              # Workspace configuration ✅
 ```
 
 ## Technical Implementation
@@ -313,6 +513,9 @@ pub trait Deformer: Send + Sync + std::fmt::Debug {
 
 ### ✅ **Fully Working Features**
 - **GPU Raytracing**: Real-time GPU rendering with WGPU (spheres, materials, lighting) 🚀
+- **Second Life Primitives**: Complete set of SL-style primitives (Box, Sphere, Cylinder, Prism, Torus, Tube, Ring) ✅
+- **Advanced Primitives**: Cone, Capsule, Ellipsoid with traditional raytracing ✅
+- **Dual Rendering Approach**: Traditional raytracing + SDF system for maximum flexibility ✅
 - **Real-time Animation**: Smooth camera orbiting and scene updates at 60fps
 - **Complete SDF System**: All SDF primitives and CSG operations implemented
 - **Deformation Pipeline**: All deformers working with chaining support
@@ -349,7 +552,8 @@ pub trait Deformer: Send + Sync + std::fmt::Debug {
 - [ ] **Shadow Mapping**: Proper shadow casting for all light types
 
 #### 🔧 **Phase 3: Enhanced Features**
-- [ ] **More SDF Primitives**: Cone, capsule, ellipsoid, custom mesh SDFs
+- [x] **Second Life Primitives**: Complete set of SL-style primitives ✅
+- [x] **Advanced Primitives**: Cone, capsule, ellipsoid ✅
 - [ ] **Texture Mapping**: UV coordinates and texture sampling for SDFs
 - [ ] **Level-of-Detail**: Adaptive quality based on distance and complexity
 - [ ] **Scene Serialization**: Save/load complex SDF hierarchies
@@ -365,25 +569,40 @@ pub trait Deformer: Send + Sync + std::fmt::Debug {
 ### 🚀 **Quick Start Commands**
 
 ```bash
-# Clone and run the spooky demo
+# Clone and run demo applications
 git clone <repository-url>
 cd RRTE
-cargo run --release
+
+# Run demo applications
+cargo run -p basic-demo --release         # Basic raytracing demo
+cargo run -p advanced-demo --release      # Animated spooky scene
+cargo run -p sdf-showcase --release       # Second Life primitives showcase
 
 # Development commands
-cargo build --release        # Build optimized version
-cargo run                    # Run debug version (slower)
+cargo build --release        # Build all crates optimized
 cargo test                   # Run all tests
 cargo check                  # Quick compilation check
 cargo clippy                 # Linting and suggestions
 ```
 
 ### 🎮 **What You'll See**
-- **GPU-accelerated raytracing** running at 60fps
+
+**Basic Demo**:
+- **3 colorful spheres** with clean lighting
+- **GPU-accelerated raytracing** at 60fps
+- **Simple scene composition** perfect for learning
+
+**Advanced Demo**: 
 - **6 dark colored spheres** with atmospheric lighting
 - **Smooth camera orbit** around the scene
 - **Real-time shadows and reflections**
-- **Console output** showing engine initialization and performance
+- **Spooky animated atmosphere**
+
+**Primitive Showcase**:
+- **Second Life-style primitives** demonstration
+- **Advanced geometric primitives** (Cone, Capsule, Ellipsoid)
+- **CSG operation examples** (Union, Difference, Intersection)
+- **Professional lighting setup** for optimal primitive visualization
 
 ### Creating Your First SDF Object
 

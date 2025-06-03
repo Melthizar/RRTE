@@ -1,0 +1,32 @@
+[package]
+name = "simple-demo"
+version = "0.1.0"
+edition = "2021"
+authors = ["RRTE Engine Team"]
+description = "Simple demo with just a plane, cube, light, and camera"
+
+[[bin]]
+name = "simple-demo"
+path = "src/main.rs"
+
+[dependencies]
+# RRTE Engine (the main engine library)
+rrte-engine = { path = "../../" }
+
+# GPU rendering (WGPU)
+wgpu = "0.19"
+
+# Application-specific dependencies for windowing and display
+winit = "0.29.15"
+pixels = "0.15.0"
+raw-window-handle = "0.6.2"
+
+# Async runtime
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+# Error handling
+anyhow = "1.0"
+
+# Logging
+log = "0.4"
+env_logger = "0.10" 

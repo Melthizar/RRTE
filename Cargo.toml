@@ -7,6 +7,10 @@ members = [
     "crates/rrte-assets",
     "crates/rrte-plugin",
     "crates/rrte-api",
+    "examples/basic-demo",
+    "examples/advanced-demo",
+    "examples/sdf-showcase",
+    "examples/simple-demo",
 ]
 resolver = "2"
 
@@ -69,6 +73,11 @@ license = "MIT OR Apache-2.0"
 keywords = ["gamedev", "raytracing", "3d", "engine", "graphics"]
 categories = ["game-development", "graphics", "rendering"]
 
+# This is now a library-only crate
+[lib]
+name = "rrte_engine"
+path = "src/lib.rs"
+
 [dependencies]
 anyhow = "1.0"
 log = "0.4"
@@ -76,13 +85,11 @@ rrte-api = { path = "crates/rrte-api" }
 rrte-core = { path = "crates/rrte-core" }
 rrte-math = { path = "crates/rrte-math" }
 rrte-renderer = { path = "crates/rrte-renderer" }
+rrte-scene = { path = "crates/rrte-scene" }
 rrte-ecs = { path = "crates/rrte-ecs" }
 rrte-assets = { path = "crates/rrte-assets" }
 rrte-plugin = { path = "crates/rrte-plugin" }
 
-# Added for windowing and pixel buffer display for the main binary
-winit = "0.29.15"
-pixels = "0.15.0"
-raw-window-handle = "0.6.2"
+# Core engine dependencies (no windowing here - that's for applications)
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 wgpu = { version = "0.19" }
