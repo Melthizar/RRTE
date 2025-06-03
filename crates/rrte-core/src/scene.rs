@@ -82,7 +82,7 @@ impl Scene {    /// Create a new empty scene
     /// Update the scene
     pub fn update(&mut self, delta_time: f32) {
         // Update entity systems
-        self.entity_manager.update(delta_time);
+        // self.entity_manager_mut().update(delta_time); // FIXME: World has no update method
         
         // Mark as clean after update
         self.dirty = false;
@@ -176,16 +176,16 @@ impl Scene {    /// Create a new empty scene
         self.clear_objects();
         self.clear_lights();
         self.clear_materials();
-        self.entity_manager = EntityManager::new();
+        self.world = World::new();
         self.dirty = true;
     }
 
     /// Create a new entity in the scene
     pub fn create_entity(&mut self) -> Entity {
-        let entity = self.entity_manager.create_entity();
+        let entity = self.entity_manager_mut().create_entity();
         
         // Add default scene component
-        self.entity_manager.add_component(entity, SceneComponent::default());
+        self.entity_manager_mut().add_component(entity, SceneComponent::default());
         
         self.dirty = true;
         entity
@@ -193,41 +193,43 @@ impl Scene {    /// Create a new empty scene
 
     /// Remove an entity from the scene
     pub fn remove_entity(&mut self, entity: Entity) {
-        self.entity_manager.remove_entity(entity);
+        self.entity_manager_mut().destroy_entity(entity);
         self.dirty = true;
     }
 
     /// Add a component to an entity
     pub fn add_component<T: Component>(&mut self, entity: Entity, component: T) {
-        self.entity_manager.add_component(entity, component);
+        self.entity_manager_mut().add_component(entity, component);
         self.dirty = true;
     }
 
     /// Get a component from an entity
     pub fn get_component<T: Component>(&self, entity: Entity) -> Option<&T> {
-        self.entity_manager.get_component(entity)
+        self.entity_manager().get_component(entity)
     }
 
     /// Get a mutable component from an entity
     pub fn get_component_mut<T: Component>(&mut self, entity: Entity) -> Option<&mut T> {
-        self.dirty = true;
-        self.entity_manager.get_component_mut(entity)
+        self.entity_manager_mut().get_component_mut(entity)
     }
 
     /// Check if an entity has a component
     pub fn has_component<T: Component>(&self, entity: Entity) -> bool {
-        self.entity_manager.has_component::<T>(entity)
+        self.entity_manager().get_component::<T>(entity).is_some()
     }
 
     /// Remove a component from an entity
-    pub fn remove_component<T: Component>(&mut self, entity: Entity) -> Option<T> {
-        self.dirty = true;
-        self.entity_manager.remove_component(entity)
+    pub fn remove_component<T: Component>(&mut self, entity: Entity) -> bool {
+        let removed = self.entity_manager_mut().remove_component::<T>(entity);
+        if removed {
+            self.dirty = true;
+        }
+        removed
     }
 
     /// Get all entities with a specific component
     pub fn get_entities_with_component<T: Component>(&self) -> Vec<Entity> {
-        self.entity_manager.get_entities_with_component::<T>()
+        self.entity_manager().get_entities_with_component::<T>()
     }
 
     /// Get scene configuration
@@ -277,20 +279,19 @@ impl Scene {    /// Create a new empty scene
         self.materials.len()
     }
 
-    /// Get the number of entities in the scene
+    /// Get the total number of entities in the scene
     pub fn entity_count(&self) -> usize {
-        self.entity_manager.entity_count()
+        self.entity_manager().get_entities().len()
     }
 
-    /// Get entity manager reference
-    pub fn entity_manager(&self) -> &EntityManager {
-        &self.entity_manager
+    /// Get a reference to the entity manager (now World)
+    pub fn entity_manager(&self) -> &World {
+        &self.world
     }
 
-    /// Get mutable entity manager reference
-    pub fn entity_manager_mut(&mut self) -> &mut EntityManager {
-        self.dirty = true;
-        &mut self.entity_manager
+    /// Get a mutable reference to the entity manager (now World)
+    pub fn entity_manager_mut(&mut self) -> &mut World {
+        &mut self.world
     }
 }
 
@@ -307,7 +308,7 @@ impl std::fmt::Debug for Scene {
             .field("objects", &self.objects.len())
             .field("materials", &self.materials.len())
             .field("lights", &self.lights.len())
-            .field("entities", &self.entity_manager.entity_count())
+            .field("entities", &self.entity_manager().get_entities().len())
             .field("dirty", &self.dirty)
             .finish()
     }

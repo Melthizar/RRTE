@@ -11,5 +11,5 @@ pub use material::*;
 pub use primitives::*;
 pub use scene::*;
 pub use light::*;
-pub use gpu_renderer::*;
+pub use gpu_renderer::{GpuRenderer, GpuRendererConfig};
 pub use camera::*;

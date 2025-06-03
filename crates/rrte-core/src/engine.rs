@@ -1,13 +1,25 @@
-use crate::{Time, Camera, Scene, Events, Input};
-use rrte_renderer::{Raytracer, RaytracerConfig};
+use crate::{Time, Scene, Events, Input};
+use rrte_renderer::{
+    Raytracer, RaytracerConfig, Camera as RendererCamera, GpuRenderer, GpuRendererConfig,
+};
 use anyhow::Result;
 use log::{info, warn, error};
 use std::time::Instant;
+use std::sync::Arc;
+use winit::window::Window;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RendererMode {
+    Cpu,
+    Gpu,
+}
 
 /// Engine configuration
 #[derive(Debug, Clone)]
 pub struct EngineConfig {
+    pub renderer_mode: RendererMode,
     pub renderer_config: RaytracerConfig,
+    pub gpu_renderer_config: GpuRendererConfig,
     pub target_fps: f32,
     pub enable_vsync: bool,
     pub log_level: log::LevelFilter,
@@ -16,7 +28,9 @@ pub struct EngineConfig {
 impl Default for EngineConfig {
     fn default() -> Self {
         Self {
+            renderer_mode: RendererMode::Cpu,
             renderer_config: RaytracerConfig::default(),
+            gpu_renderer_config: GpuRendererConfig::default(),
             target_fps: 60.0,
             enable_vsync: true,
             log_level: log::LevelFilter::Info,
@@ -25,41 +39,61 @@ impl Default for EngineConfig {
 }
 
 /// Main engine state
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum EngineState {
-    Initializing,
+    Uninitialized,
+    InitializingRenderer,
     Running,
     Paused,
     Stopping,
     Stopped,
 }
 
+/// Holds the active renderer instance
+pub enum ActiveRenderer {
+    Cpu(Raytracer),
+    Gpu(GpuRenderer),
+    None,
+}
+
+impl std::fmt::Debug for ActiveRenderer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ActiveRenderer::Cpu(_) => f.debug_tuple("Cpu").finish(),
+            ActiveRenderer::Gpu(_) => f.debug_tuple("Gpu").finish(),
+            ActiveRenderer::None => f.debug_tuple("None").finish(),
+        }
+    }
+}
+
 /// Core engine struct that manages all subsystems
+#[derive(Debug)]
 pub struct Engine {
     config: EngineConfig,
     state: EngineState,
     time: Time,
-    renderer: Raytracer,
+    renderer: ActiveRenderer,
     scene: Scene,
-    camera: Camera,
+    camera: RendererCamera,
     events: Events,
     input: Input,
     frame_buffer: Vec<u8>,
 }
 
 impl Engine {
-    /// Create a new engine instance
+    /// Create a new engine instance (renderer is not initialized yet)
     pub fn new(config: EngineConfig) -> Result<Self> {
         // Initialize logging
-        env_logger::Builder::from_default_env()
-            .filter_level(config.log_level)
-            .init();
+        if env_logger::try_init_from_env(env_logger::Env::default().default_filter_or(config.log_level.as_str())).is_err() {
+            // Logger might be already set, which is fine.
+            // Alternatively, log a warning or handle as appropriate if this is unexpected.
+        }
 
-        info!("Initializing RRTE Engine...");
+        info!("Initializing RRTE Engine (Renderer pending)...");
 
-        let renderer = Raytracer::new(config.renderer_config.clone());
         let scene = Scene::new();
-        let camera = Camera::default();
+        let aspect_ratio = config.renderer_config.width as f32 / config.renderer_config.height as f32;
+        let camera = RendererCamera::new_perspective(45.0_f32.to_radians(), aspect_ratio, 0.1, 100.0);
         let events = Events::new();
         let input = Input::new();
         let time = Time::new();
@@ -69,9 +103,9 @@ impl Engine {
 
         Ok(Self {
             config,
-            state: EngineState::Initializing,
+            state: EngineState::Uninitialized,
             time,
-            renderer,
+            renderer: ActiveRenderer::None,
             scene,
             camera,
             events,
@@ -80,73 +114,152 @@ impl Engine {
         })
     }
 
-    /// Initialize the engine systems
-    pub fn initialize(&mut self) -> Result<()> {
-        info!("Engine initialization starting...");
-        
+    /// Initialize the chosen renderer. This needs to be called after window creation for GPU.
+    pub async fn initialize_renderer(&mut self, window: Option<Arc<Window>>) -> Result<()> {
+        if !matches!(self.state, EngineState::Uninitialized) {
+            warn!("Renderer already initialized or initialization in progress.");
+            return Ok(());
+        }
+        self.state = EngineState::InitializingRenderer;
+        info!("Initializing {:?} renderer...", self.config.renderer_mode);
+
+        match self.config.renderer_mode {
+            RendererMode::Cpu => {
+                let cpu_renderer = Raytracer::new(self.config.renderer_config.clone());
+                self.renderer = ActiveRenderer::Cpu(cpu_renderer);
+                info!("CPU Renderer initialized.");
+            }
+            RendererMode::Gpu => {
+                let window_handle = window.ok_or_else(|| anyhow::anyhow!("Window handle required for GPU renderer initialization"))?;
+                let mut gpu_renderer_config = self.config.gpu_renderer_config.clone();
+                gpu_renderer_config.width = self.config.renderer_config.width;
+                gpu_renderer_config.height = self.config.renderer_config.height;
+
+                let mut gpu_renderer = GpuRenderer::new(gpu_renderer_config);
+                gpu_renderer.initialize(window_handle).await?;
+                self.renderer = ActiveRenderer::Gpu(gpu_renderer);
+                info!("GPU Renderer initialized.");
+            }
+        }
         self.state = EngineState::Running;
         self.time.start();
-        
-        info!("Engine initialized successfully");
+        info!("Engine systems and renderer initialized successfully.");
         Ok(())
     }
 
-    /// Main engine run loop
-    pub fn run(&mut self) -> Result<()> {
-        info!("Starting engine main loop...");
+    /// Main engine run loop (conceptual, actual loop is in main.rs)
+    /// This method is kept for potential non-windowed/headless operation or future refactor.
+    pub fn run_headless_loop(&mut self) -> Result<()> {
+        if !matches!(self.config.renderer_mode, RendererMode::Cpu) {
+            error!("Headless loop is only supported for CPU renderer.");
+            return Err(anyhow::anyhow!("Headless loop not supported for GPU renderer"));
+        }
+        info!("Starting engine headless loop (CPU only)...");
         
-        let mut last_frame_time = Instant::now();
         let target_frame_duration = std::time::Duration::from_secs_f32(1.0 / self.config.target_fps);
 
         while self.is_running() {
             let frame_start = Instant::now();
             
-            // Update timing
             self.time.update();
-            
-            // Process events and input
             self.events.poll();
             self.input.update();
-            
-            // Update scene
             self.scene.update(self.time.delta_time());
             
-            // Render frame
-            if let Err(e) = self.render() {
-                error!("Render error: {}", e);
+            if let Err(e) = self.render_frame() {
+                error!("Render error in headless loop: {}", e);
             }
             
-            // Handle frame rate limiting
             let frame_duration = frame_start.elapsed();
             if frame_duration < target_frame_duration {
                 std::thread::sleep(target_frame_duration - frame_duration);
             }
-            
-            last_frame_time = frame_start;
         }
-
-        info!("Engine main loop ended");
+        info!("Engine headless loop ended");
         Ok(())
     }
 
-    /// Render a frame
-    fn render(&mut self) -> Result<()> {
-        // Get scene objects and render
-        let objects = self.scene.get_objects();
-        let lights = self.scene.get_lights();
-        let materials = self.scene.get_materials();
-        
-        self.frame_buffer = self.renderer.render(&objects, &lights, &materials, &self.camera);
-        
+    /// Render a frame.
+    /// For CPU, it renders to an internal buffer.
+    /// For GPU, it renders directly to the screen/surface.
+    pub fn render_frame(&mut self) -> Result<()> {
+        match &mut self.renderer {
+            ActiveRenderer::Cpu(raytracer) => {
+                let objects = self.scene.get_objects();
+                let lights = self.scene.get_lights();
+                let materials = self.scene.get_materials();
+                self.frame_buffer = raytracer.render(&objects, &lights, &materials, &self.camera);
+            }
+            ActiveRenderer::Gpu(gpu_renderer) => {
+                gpu_renderer.render()?
+            }
+            ActiveRenderer::None => {
+                return Err(anyhow::anyhow!("Renderer not initialized before render_frame call."));
+            }
+        }
         Ok(())
     }
 
-    /// Check if the engine should continue running
+    /// Updates the engine and renderer resolution.
+    pub fn update_resolution(&mut self, width: u32, height: u32) {
+        if width == 0 || height == 0 {
+            warn!("Attempted to update resolution to zero size, skipping.");
+            return;
+        }
+        info!("Updating resolution to {}x{}", width, height);
+        
+        match &mut self.renderer {
+            ActiveRenderer::Cpu(raytracer) => {
+                self.config.renderer_config.width = width;
+                self.config.renderer_config.height = height;
+                raytracer.update_config(self.config.renderer_config.clone());
+                let buffer_size = (width * height * 4) as usize;
+                self.frame_buffer.resize(buffer_size, 0u8);
+            }
+            ActiveRenderer::Gpu(gpu_renderer) => {
+                if let Err(e) = gpu_renderer.resize(width, height) {
+                    error!("GpuRenderer resize error: {}", e);
+                }
+                self.config.gpu_renderer_config.width = width;
+                self.config.gpu_renderer_config.height = height;
+            }
+            ActiveRenderer::None => {
+                warn!("update_resolution called before renderer initialization. Storing in CPU config for now.");
+                self.config.renderer_config.width = width;
+                self.config.renderer_config.height = height;
+                self.config.gpu_renderer_config.width = width;
+                self.config.gpu_renderer_config.height = height;
+            }
+        }
+        
+        if let rrte_renderer::camera::ProjectionType::Perspective { aspect_ratio, .. } = &mut self.camera.projection {
+            *aspect_ratio = width as f32 / height as f32;
+        }
+    }
+
+    /// Get the current frame buffer (only Some for CPU renderer)
+    pub fn get_frame_buffer(&self) -> Option<&[u8]> {
+        match self.config.renderer_mode {
+            RendererMode::Cpu => Some(&self.frame_buffer),
+            RendererMode::Gpu => None,
+        }
+    }
+    
+    /// Initialize the engine systems (excluding renderer, which is now separate)
+    pub fn initialize_core_systems(&mut self) -> Result<()> {
+        info!("Core engine systems initialization (excluding renderer)...");
+        if self.state != EngineState::Uninitialized {
+            warn!("Core systems already initialized or initialization in progress.");
+            return Ok(());
+        }
+        info!("Core engine systems ready (pending renderer initialization).");
+        Ok(())
+    }
+
     pub fn is_running(&self) -> bool {
         matches!(self.state, EngineState::Running)
     }
 
-    /// Pause the engine
     pub fn pause(&mut self) {
         if matches!(self.state, EngineState::Running) {
             self.state = EngineState::Paused;
@@ -154,7 +267,6 @@ impl Engine {
         }
     }
 
-    /// Resume the engine
     pub fn resume(&mut self) {
         if matches!(self.state, EngineState::Paused) {
             self.state = EngineState::Running;
@@ -162,66 +274,31 @@ impl Engine {
         }
     }
 
-    /// Stop the engine
     pub fn stop(&mut self) {
-        self.state = EngineState::Stopping;
-        info!("Engine stopping...");
+        if self.state != EngineState::Stopping && self.state != EngineState::Stopped {
+            self.state = EngineState::Stopping;
+            info!("Engine stopping...");
+        }
     }
 
-    /// Shutdown the engine
     pub fn shutdown(&mut self) -> Result<()> {
         info!("Shutting down engine...");
-        
         self.state = EngineState::Stopped;
-        
         info!("Engine shutdown complete");
         Ok(())
     }
-
-    /// Get the current frame buffer
-    pub fn get_frame_buffer(&self) -> &[u8] {
-        &self.frame_buffer
-    }
-
-    /// Get engine configuration
-    pub fn config(&self) -> &EngineConfig {
-        &self.config
-    }
-
-    /// Get engine state
-    pub fn state(&self) -> &EngineState {
-        &self.state
-    }
-
-    /// Get mutable reference to scene
-    pub fn scene_mut(&mut self) -> &mut Scene {
-        &mut self.scene
-    }
-
-    /// Get reference to scene
-    pub fn scene(&self) -> &Scene {
-        &self.scene
-    }
-
-    /// Get mutable reference to camera
-    pub fn camera_mut(&mut self) -> &mut Camera {
-        &mut self.camera
-    }
-
-    /// Get reference to camera
-    pub fn camera(&self) -> &Camera {
-        &self.camera
-    }
-
-    /// Get time information
-    pub fn time(&self) -> &Time {
-        &self.time
-    }
-
-    /// Get input state
-    pub fn input(&self) -> &Input {
-        &self.input
-    }
+    
+    pub fn config(&self) -> &EngineConfig { &self.config }
+    pub fn config_mut(&mut self) -> &mut EngineConfig { &mut self.config }
+    pub fn state(&self) -> &EngineState { &self.state }
+    pub fn scene_mut(&mut self) -> &mut Scene { &mut self.scene }
+    pub fn scene(&self) -> &Scene { &self.scene }
+    pub fn camera_mut(&mut self) -> &mut RendererCamera { &mut self.camera }
+    pub fn camera(&self) -> &RendererCamera { &self.camera }
+    pub fn time(&self) -> &Time { &self.time }
+    pub fn time_mut(&mut self) -> &mut Time { &mut self.time }
+    pub fn input(&self) -> &Input { &self.input }
+    pub fn input_mut(&mut self) -> &mut Input { &mut self.input }
 }
 
 impl Drop for Engine {

@@ -36,6 +36,11 @@ impl Raytracer {
         Self { config }
     }
 
+    /// Update the raytracer's configuration
+    pub fn update_config(&mut self, new_config: RaytracerConfig) {
+        self.config = new_config;
+    }
+
     /// Render a scene to a pixel buffer
     pub fn render(
         &self,
@@ -107,30 +112,35 @@ impl Raytracer {
             }
         }
 
-        if let (Some(hit), Some(object)) = (closest_hit, closest_object) {
-            // Get material
-            let material_id = hit.material_id.unwrap_or(0) as usize;
-            let material = materials.get(material_id).unwrap();
+        if let (Some(hit), Some(object_arc)) = (closest_hit, closest_object) {
+            // Get material directly from the object
+            if let Some(material_arc) = object_arc.material() {
+                let material = material_arc; // material is Arc<dyn Material>
             
-            // Calculate lighting
-            let mut color = Color::BLACK;
+                // Calculate lighting
+                let mut color = Color::BLACK;
             
-            // Ambient lighting
-            color = color + material.ambient_color() * 0.1;
-              // Direct lighting from light sources
-            for light in lights {
-                let light_contribution = light.illuminate(hit.point, hit.normal);
-                color = color + light_contribution.color * light_contribution.attenuation;
+                // Ambient lighting
+                color = color + material.ambient_color() * 0.1; // Assuming ambient_color() exists and is suitable
+                // Direct lighting from light sources
+                for light in lights {
+                    let light_contribution = light.illuminate(hit.point, hit.normal);
+                    color = color + light_contribution.color * light_contribution.attenuation;
+                }
+            
+                // Recursive reflection/refraction
+                if let Some(scattered_ray) = material.scatter(ray, &hit) {
+                    let attenuation = material.albedo();
+                    let scattered_color = self.ray_color(&scattered_ray, objects, lights, materials, depth - 1);
+                    color = color + Color::from(attenuation.to_vec3() * scattered_color.to_vec3());
+                }
+            
+                return color; // Return the calculated color
+            } else {
+                // Object hit but has no material. This should ideally be handled.
+                // For now, return black to make it visually distinct if this path is taken.
+                return Color::BLACK; 
             }
-            
-            // Recursive reflection/refraction
-            if let Some(scattered_ray) = material.scatter(ray, &hit) {
-                let attenuation = material.albedo();
-                let scattered_color = self.ray_color(&scattered_ray, objects, lights, materials, depth - 1);
-                color = color + Color::from(attenuation.to_vec3() * scattered_color.to_vec3());
-            }
-            
-            color
         } else {
             // Background color
             self.config.background_color

@@ -32,7 +32,9 @@ impl World {
             // This would need to be implemented properly
             // manager.remove_component(entity);
         }
-    }    pub fn add_component<T: Component + 'static>(&mut self, entity: Entity, component: T) {
+    }
+
+    pub fn add_component<T: Component + 'static>(&mut self, entity: Entity, component: T) {
         let type_id = TypeId::of::<T>();
         if !self.component_managers.contains_key(&type_id) {
             self.component_managers.insert(type_id, ComponentStorage::new::<T>());
@@ -41,9 +43,34 @@ impl World {
         if let Some(storage) = self.component_managers.get_mut(&type_id) {
             storage.insert(entity, component);
         }
-    }    pub fn get_component<T: Component + 'static>(&self, entity: Entity) -> Option<&T> {
+    }
+
+    pub fn get_component<T: Component + 'static>(&self, entity: Entity) -> Option<&T> {
         let type_id = TypeId::of::<T>();
         self.component_managers.get(&type_id)?.get::<T>(entity)
+    }
+
+    pub fn get_component_mut<T: Component + 'static>(&mut self, entity: Entity) -> Option<&mut T> {
+        let type_id = TypeId::of::<T>();
+        self.component_managers.get_mut(&type_id)?.get_mut::<T>(entity)
+    }
+
+    pub fn remove_component<T: Component + 'static>(&mut self, entity: Entity) -> bool {
+        let type_id = TypeId::of::<T>();
+        if let Some(storage) = self.component_managers.get_mut(&type_id) {
+            storage.remove(entity).is_some()
+        } else {
+            false
+        }
+    }
+
+    pub fn get_entities_with_component<T: Component + 'static>(&self) -> Vec<Entity> {
+        let type_id = TypeId::of::<T>();
+        if let Some(storage) = self.component_managers.get(&type_id) {
+            storage.entities().collect()
+        } else {
+            Vec::new()
+        }
     }
 
     pub fn get_entities(&self) -> &[Entity] {

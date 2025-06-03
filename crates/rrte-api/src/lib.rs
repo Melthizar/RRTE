@@ -4,13 +4,14 @@
 //! It re-exports the most commonly used types and functions from all engine modules.
 
 // Re-export core functionality
-pub use rrte_core::*;
+pub use rrte_core::{Engine, Time, Scene, Events, Input, EngineConfig as CoreEngineConfig};
 pub use rrte_math::*;
 pub use rrte_ecs::*;
-pub use rrte_plugin::*;
+pub use rrte_plugin::{Plugin, PluginManifest, PluginContext, PluginEvent};
 
 // Re-export renderer types
 pub use rrte_renderer::{
+    Camera,
     Raytracer, RaytracerConfig, Material, LambertianMaterial, MetalMaterial, 
     DielectricMaterial, EmissiveMaterial, MaterialProperties
 };
@@ -29,9 +30,10 @@ pub mod prelude {
         Entity, Component, World,
         
         // Core
-        Camera, Time, Engine,
+        Time, Engine, CoreEngineConfig,
         
         // Rendering
+        Camera,
         Raytracer, RaytracerConfig,
         LambertianMaterial, MetalMaterial, DielectricMaterial, EmissiveMaterial,
         
@@ -105,7 +107,9 @@ impl EngineBuilder {
     }
 
     pub fn build(self) -> anyhow::Result<Engine> {
-        Engine::new(self.config)
+        let mut core_config = CoreEngineConfig::default();
+        core_config.renderer_config = self.config.raytracer_config.clone();
+        Engine::new(core_config)
     }
 }
 

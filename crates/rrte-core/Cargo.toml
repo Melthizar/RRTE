@@ -14,4 +14,7 @@ anyhow.workspace = true
 thiserror.workspace = true
 log.workspace = true
 env_logger.workspace = true
-tokio.workspace = true
+winit.workspace = true
+
+[dev-dependencies]
+# Add any development-specific dependencies here

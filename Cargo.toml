@@ -16,9 +16,10 @@ glam = { version = "0.24", features = ["serde"] }
 nalgebra = "0.32"
 
 # Graphics and windowing
-winit = "0.29"
+winit = "0.29.15"
 wgpu = "0.19"
 bytemuck = { version = "1.14", features = ["derive"] }
+raw-window-handle = "0.6.2"
 
 # Image processing
 image = "0.24"
@@ -32,7 +33,7 @@ anyhow = "1.0"
 thiserror = "1.0"
 
 # Async runtime
-tokio = { version = "1.0", features = ["full"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 # Plugin system
 libloading = "0.8"
@@ -58,15 +59,19 @@ keywords = ["gamedev", "raytracing", "3d", "engine", "graphics"]
 categories = ["game-development", "graphics", "rendering"]
 
 [dependencies]
+anyhow = "1.0"
+log = "0.4"
+rrte-api = { path = "crates/rrte-api" }
 rrte-core = { path = "crates/rrte-core" }
 rrte-math = { path = "crates/rrte-math" }
 rrte-renderer = { path = "crates/rrte-renderer" }
 rrte-ecs = { path = "crates/rrte-ecs" }
 rrte-assets = { path = "crates/rrte-assets" }
 rrte-plugin = { path = "crates/rrte-plugin" }
-rrte-api = { path = "crates/rrte-api" }
 
-anyhow.workspace = true
-log.workspace = true
-env_logger.workspace = true
-tokio.workspace = true
+# Added for windowing and pixel buffer display for the main binary
+winit = "0.29.15"
+pixels = "0.15.0"
+raw-window-handle = "0.6.2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+wgpu = { version = "0.19" }

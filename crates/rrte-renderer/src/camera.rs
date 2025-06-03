@@ -1,4 +1,4 @@
-use rrte_math::{Transform, Mat4, Vec3, Ray};
+use rrte_math::{Transform, Mat4, Vec3, Ray, Quat};
 
 /// Camera projection types
 #[derive(Debug, Clone, PartialEq)]
@@ -76,6 +76,19 @@ impl Camera {
     /// Get the view-projection matrix
     pub fn view_projection_matrix(&self) -> Mat4 {
         self.projection_matrix() * self.view_matrix()
+    }
+
+    /// Look at a target position
+    pub fn look_at(&mut self, target: Vec3, up: Vec3) {
+        // Ensure self.transform.position is set before calling this
+        let forward = (target - self.transform.position).normalize();
+        let right = forward.cross(up).normalize();
+        let actual_up = right.cross(forward); // Recalculate up vector to be orthogonal
+        self.transform.rotation = Quat::from_rotation_arc(Vec3::NEG_Z, forward);
+        // Note: A more robust look_at might involve creating a rotation matrix
+        // from the basis vectors (right, actual_up, -forward) and then converting to Quat.
+        // Quat::from_rotation_arc might have issues if forward is parallel to Vec3::NEG_Z.
+        // For now, this matches the rrte_core::Camera implementation.
     }
 
     /// Generate a ray from screen coordinates (normalized 0-1)
