@@ -1,0 +1,13 @@
+[package]
+name = "rrte-scene"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rrte-math = { path = "../rrte-math" }
+rrte-renderer = { path = "../rrte-renderer" }
+rrte-ecs = { path = "../rrte-ecs" }
+serde.workspace = true
+
+[lints]
+workspace = true

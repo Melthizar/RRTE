@@ -1,5 +1,5 @@
 use rrte_math::{Transform, Vec3, Color};
-use rrte_renderer::{SceneObject, Material, Light};
+use rrte_renderer::{SceneObject, Material, Light, primitives::Sphere, light::PointLight};
 use rrte_ecs::{Entity, World, Component};
 use std::sync::Arc;
 
@@ -52,6 +52,8 @@ pub struct Scene {
     objects: Vec<Arc<dyn SceneObject>>,
     materials: Vec<Arc<dyn Material>>,
     lights: Vec<Arc<dyn Light>>,
+    legacy_spheres: Vec<Arc<Sphere>>, // Stored separately for GPU renderer compatibility
+    legacy_lights: Vec<Arc<PointLight>>, // Stored separately for GPU renderer compatibility
     dirty: bool,
 }
 
@@ -63,6 +65,8 @@ impl Scene {    /// Create a new empty scene
             objects: Vec::new(),
             materials: Vec::new(),
             lights: Vec::new(),
+            legacy_spheres: Vec::new(),
+            legacy_lights: Vec::new(),
             dirty: true,
         }
     }
@@ -75,6 +79,8 @@ impl Scene {    /// Create a new empty scene
             objects: Vec::new(),
             materials: Vec::new(),
             lights: Vec::new(),
+            legacy_spheres: Vec::new(),
+            legacy_lights: Vec::new(),
             dirty: true,
         }
     }
@@ -88,9 +94,17 @@ impl Scene {    /// Create a new empty scene
         self.dirty = false;
     }
 
-    /// Add an object to the scene
+    /// Add an object implementing [`SceneObject`]
     pub fn add_object(&mut self, object: Arc<dyn SceneObject>) {
         self.objects.push(object);
+        self.dirty = true;
+    }
+
+    /// Convenience method to add a [`Sphere`]. This stores the sphere in the
+    /// legacy list used by the GPU renderer.
+    pub fn add_sphere(&mut self, sphere: Arc<Sphere>) {
+        self.legacy_spheres.push(Arc::clone(&sphere));
+        self.objects.push(sphere);
         self.dirty = true;
     }
 
@@ -110,8 +124,16 @@ impl Scene {    /// Create a new empty scene
         self.dirty = true;
     }
 
-    /// Add a light to the scene
+    /// Add a light implementing [`Light`]
     pub fn add_light(&mut self, light: Arc<dyn Light>) {
+        self.lights.push(light);
+        self.dirty = true;
+    }
+
+    /// Convenience method to add a [`PointLight`]. This stores the light in the
+    /// legacy list used by the GPU renderer.
+    pub fn add_point_light(&mut self, light: Arc<PointLight>) {
+        self.legacy_lights.push(Arc::clone(&light));
         self.lights.push(light);
         self.dirty = true;
     }
@@ -131,6 +153,16 @@ impl Scene {    /// Create a new empty scene
         &self.objects
     }
 
+    /// Get typed sphere references used by the GPU renderer
+    pub fn legacy_spheres(&self) -> &[Arc<Sphere>] {
+        &self.legacy_spheres
+    }
+
+    /// Backwards compatibility: retrieve spheres as objects for the CPU renderer
+    pub fn objects(&self) -> &[Arc<Sphere>] {
+        &self.legacy_spheres
+    }
+
     /// Get all materials in the scene
     pub fn get_materials(&self) -> &[Arc<dyn Material>] {
         &self.materials
@@ -139,6 +171,16 @@ impl Scene {    /// Create a new empty scene
     /// Get all lights in the scene
     pub fn get_lights(&self) -> &[Arc<dyn Light>] {
         &self.lights
+    }
+
+    /// Get typed point lights used by the GPU renderer
+    pub fn legacy_lights(&self) -> &[Arc<PointLight>] {
+        &self.legacy_lights
+    }
+
+    /// Backwards compatibility: retrieve point lights as lights for the CPU renderer
+    pub fn lights(&self) -> &[Arc<PointLight>] {
+        &self.legacy_lights
     }
 
     /// Get mutable reference to objects
@@ -156,12 +198,14 @@ impl Scene {    /// Create a new empty scene
     /// Clear all objects from the scene
     pub fn clear_objects(&mut self) {
         self.objects.clear();
+        self.legacy_spheres.clear();
         self.dirty = true;
     }
 
     /// Clear all lights from the scene
     pub fn clear_lights(&mut self) {
         self.lights.clear();
+        self.legacy_lights.clear();
         self.dirty = true;
     }
 

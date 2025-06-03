@@ -1601,6 +1601,7 @@ dependencies = [
  "rrte-math",
  "rrte-plugin",
  "rrte-renderer",
+ "rrte-scene",
  "serde",
  "serde_json",
 ]
@@ -1713,9 +1714,10 @@ dependencies = [
 name = "rrte-scene"
 version = "0.1.0"
 dependencies = [
- "glam",
+ "rrte-ecs",
  "rrte-math",
  "rrte-renderer",
+ "serde",
 ]
 
 [[package]]
